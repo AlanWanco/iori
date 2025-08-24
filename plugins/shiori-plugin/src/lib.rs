@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc};
 
 pub use async_trait::async_trait;
 pub use iori::PlaylistType;

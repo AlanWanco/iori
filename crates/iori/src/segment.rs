@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::{decrypt::IoriKey, ByteRange, HttpClient, IoriResult, StreamingSegment};
+use crate::{ByteRange, HttpClient, IoriResult, StreamingSegment, decrypt::IoriKey};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum InitialSegment {
@@ -194,7 +194,7 @@ pub trait ToSegmentData {
     fn to_segment_data(
         &self,
         client: HttpClient,
-    ) -> impl std::future::Future<Output = IoriResult<bytes::Bytes>> + Send;
+    ) -> impl Future<Output = IoriResult<bytes::Bytes>> + Send;
 }
 
 #[cfg(test)]

@@ -49,7 +49,7 @@ pub trait StreamingSource {
 
     fn fetch_info(
         &self,
-    ) -> impl std::future::Future<
+    ) -> impl Future<
         Output = error::IoriResult<
             tokio::sync::mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>,
         >,
@@ -59,7 +59,7 @@ pub trait StreamingSource {
         &self,
         segment: &Self::Segment,
         writer: &mut W,
-    ) -> impl std::future::Future<Output = IoriResult<()>> + Send
+    ) -> impl Future<Output = IoriResult<()>> + Send
     where
         W: tokio::io::AsyncWrite + Unpin + Send + Sync + 'static;
 }

@@ -4,9 +4,9 @@ use reqwest::header::RANGE;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{
+    InitialSegment, RemoteStreamingSegment, StreamingSegment, ToSegmentData,
     error::{IoriError, IoriResult},
     util::http::HttpClient,
-    InitialSegment, RemoteStreamingSegment, StreamingSegment, ToSegmentData,
 };
 
 pub async fn fetch_segment<S, W>(
@@ -62,7 +62,7 @@ where
     fn to_segment_data(
         &self,
         client: HttpClient,
-    ) -> impl std::future::Future<Output = IoriResult<bytes::Bytes>> + Send {
+    ) -> impl Future<Output = IoriResult<bytes::Bytes>> + Send {
         let url = self.url();
         let byte_range = self.byte_range();
         let headers = self.headers();

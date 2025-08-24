@@ -1,11 +1,11 @@
 use super::Merger;
 use crate::{
+    SegmentInfo, SegmentType,
     cache::CacheSource,
     error::IoriResult,
     util::{ordered_stream::OrderedStream, path::DuplicateOutputFileNamer},
-    SegmentInfo, SegmentType,
 };
-use std::{future::Future, path::PathBuf, pin::Pin, process::Stdio};
+use std::{path::PathBuf, pin::Pin, process::Stdio};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     process::Command,

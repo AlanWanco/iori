@@ -1,12 +1,12 @@
 use crate::{
-    cache::CacheSource, error::IoriResult, merge::Merger, IoriError, SegmentInfo, StreamingSegment,
-    StreamingSource,
+    IoriError, SegmentInfo, StreamingSegment, StreamingSource, cache::CacheSource,
+    error::IoriResult, merge::Merger,
 };
 use std::{
     num::NonZeroU32,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 use tokio::io::AsyncWriteExt;
@@ -230,8 +230,8 @@ where
 // https://github.com/rust-lang/rust/issues/102211#issuecomment-1371414544
 // TODO: remove this when this issue is fixed
 fn assert_send<'a, T>(
-    fut: impl std::future::Future<Output = T> + Send + 'a,
-) -> impl std::future::Future<Output = T> + Send + 'a {
+    fut: impl Future<Output = T> + Send + 'a,
+) -> impl Future<Output = T> + Send + 'a {
     fut
 }
 

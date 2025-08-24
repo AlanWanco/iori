@@ -3,8 +3,8 @@ pub mod memory;
 #[cfg(feature = "opendal")]
 pub mod opendal;
 
-use crate::{error::IoriResult, SegmentInfo};
-use std::{future::Future, path::PathBuf, sync::Arc};
+use crate::{SegmentInfo, error::IoriResult};
+use std::{path::PathBuf, sync::Arc};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub type CacheSourceReader = Box<dyn AsyncRead + Unpin + Send + Sync + 'static>;

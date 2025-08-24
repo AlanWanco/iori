@@ -11,8 +11,8 @@ pub use pipe::PipeMerger;
 pub use skip::SkipMerger;
 use tokio::io::AsyncWrite;
 
-use crate::{cache::CacheSource, error::IoriResult, SegmentInfo};
-use std::{future::Future, path::PathBuf};
+use crate::{SegmentInfo, cache::CacheSource, error::IoriResult};
+use std::path::PathBuf;
 
 pub trait Merger {
     /// Result of the merge.
@@ -39,7 +39,7 @@ pub trait Merger {
     fn finish(
         &mut self,
         cache: impl CacheSource,
-    ) -> impl std::future::Future<Output = IoriResult<Self::Result>> + Send;
+    ) -> impl Future<Output = IoriResult<Self::Result>> + Send;
 }
 
 pub enum IoriMerger {
