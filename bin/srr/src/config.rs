@@ -5,11 +5,17 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub s3: S3Config,
     pub showroom: ShowroomConfig,
+    pub webhook: Option<WebhookConfig>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ShowroomConfig {
     pub rooms: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct WebhookConfig {
+    pub url: String,
 }
 
 impl Config {

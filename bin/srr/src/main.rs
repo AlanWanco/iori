@@ -1,32 +1,36 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
 mod config;
+mod webhook;
 
 use config::Config;
 use iori::{
+    HttpClient,
     cache::{
-        opendal::{Configurator, Operator},
         IoriCache,
+        opendal::{Configurator, Operator},
     },
     download::ParallelDownloader,
     hls::HlsLiveSource,
     merge::IoriMerger,
-    HttpClient,
 };
 use iori_showroom::ShowRoomClient;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
+
+use crate::{config::WebhookConfig, webhook::WebhookBody};
 
 async fn update_config(
     sched: &mut JobScheduler,
     room_slugs: Vec<String>,
+    webhook: Option<WebhookConfig>,
     map: &mut HashMap<String, Uuid>,
     operator: Operator,
 ) -> anyhow::Result<()> {
@@ -49,6 +53,7 @@ async fn update_config(
             let client_backup = ShowRoomClient::new(None).await?;
             let room_id = client.get_id_by_room_slug(&slug).await?;
             let room_slug = slug.clone();
+            let webhook = webhook.clone();
             let lock = lock.clone();
             let uuid = sched
                 .add(Job::new_async("1/30 * * * * *", move |_, _| {
@@ -59,6 +64,7 @@ async fn update_config(
 
                     let room_slug = room_slug.clone();
                     let lock = lock.clone();
+                    let webhook = webhook.clone();
                     Box::pin(async move {
                         let lock = lock.get(&room_slug).unwrap();
                         let client = clients[index.load(Ordering::Relaxed) % clients.len()].clone();
@@ -66,7 +72,8 @@ async fn update_config(
 
                         if !was_locked {
                             if let Err(e) =
-                                record_room(client.clone(), &room_slug, room_id, operator).await
+                                record_room(client.clone(), &room_slug, room_id, operator, webhook)
+                                    .await
                             {
                                 log::error!("Failed to record room {room_slug}: {e}");
 
@@ -102,6 +109,7 @@ async fn record_room(
     room_slug: &str,
     room_id: u64,
     operator: Operator,
+    webhook: Option<WebhookConfig>,
 ) -> anyhow::Result<()> {
     log::debug!("Attempt to record room {room_slug}, id = {room_id}");
 
@@ -125,24 +133,49 @@ async fn record_room(
     let prefix = format!("{room_slug}/{live_id}_{live_started_at}");
 
     let client = HttpClient::default();
+
+    if let Some(webhook) = webhook.clone() {
+        let body = WebhookBody {
+            event: "start",
+            prefix: prefix.clone(),
+            profile: room_info.clone(),
+        };
+        tokio::spawn(async move {
+            let client = HttpClient::default();
+            let _ = client.post(&webhook.url).json(&body).send().await;
+        });
+    }
+
     let source = HlsLiveSource::new(client, stream.url.clone(), None, None);
 
     let cache = IoriCache::opendal(
         operator.clone(),
-        prefix,
+        prefix.clone(),
         false,
         Some("application/octet-stream".to_string()),
     );
     let merger = IoriMerger::skip();
 
     log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
-    ParallelDownloader::builder()
+    let result = ParallelDownloader::builder()
         .cache(cache)
         .merger(merger)
         .download(source)
-        .await?;
+        .await;
 
-    Ok(())
+    if let Some(webhook) = webhook {
+        let body = WebhookBody {
+            event: "end",
+            prefix: prefix.clone(),
+            profile: room_info.clone(),
+        };
+        tokio::spawn(async move {
+            let client = HttpClient::default();
+            let _ = client.post(webhook.url).json(&body).send().await;
+        });
+    }
+
+    Ok(result?)
 }
 
 #[tokio::main]
@@ -167,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
     update_config(
         &mut sched,
         config.showroom.rooms,
+        config.webhook,
         &mut watchers,
         operator.clone(),
     )
@@ -186,6 +220,7 @@ async fn main() -> anyhow::Result<()> {
                 update_config(
                     &mut sched,
                     config.showroom.rooms,
+                    config.webhook,
                     &mut watchers,
                     operator.clone(),
                 )

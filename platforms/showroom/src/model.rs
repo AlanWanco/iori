@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct LiveInfo {
@@ -112,7 +112,7 @@ impl TimeshiftStream {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct RoomProfile {
     pub room_name: String,
     pub live_id: u64,                 // 0 for not live
