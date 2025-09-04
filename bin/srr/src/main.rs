@@ -20,7 +20,7 @@ use iori::{
     hls::HlsLiveSource,
     merge::IoriMerger,
 };
-use iori_showroom::ShowRoomClient;
+use iori_showroom::{ShowRoomClient, model::RoomInfo};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
@@ -51,29 +51,28 @@ async fn update_config(
             let operator = operator.clone();
             let client = ShowRoomClient::new(None).await?;
             let client_backup = ShowRoomClient::new(None).await?;
-            let room_id = client.get_id_by_room_slug(&slug).await?;
-            let room_slug = slug.clone();
+            let room_info = client.room_info(&slug).await?;
             let webhook = webhook.clone();
             let lock = lock.clone();
             let uuid = sched
-                .add(Job::new_async("1/30 * * * * *", move |_, _| {
+                .add(Job::new_async("1/1 * * * * *", move |_, _| {
                     let operator = operator.clone();
 
                     let clients = [client.clone(), client_backup.clone()];
                     let index = AtomicUsize::new(0);
 
-                    let room_slug = room_slug.clone();
+                    let room_info = room_info.clone();
+                    let room_slug = room_info.slug.clone();
                     let lock = lock.clone();
                     let webhook = webhook.clone();
                     Box::pin(async move {
-                        let lock = lock.get(&room_slug).unwrap();
+                        let lock = lock.get(&room_info.slug).unwrap();
                         let client = clients[index.load(Ordering::Relaxed) % clients.len()].clone();
                         let was_locked = lock.fetch_or(true, Ordering::Relaxed);
 
                         if !was_locked {
                             if let Err(e) =
-                                record_room(client.clone(), &room_slug, room_id, operator, webhook)
-                                    .await
+                                record_room(client.clone(), room_info, operator, webhook).await
                             {
                                 log::error!("Failed to record room {room_slug}: {e}");
 
@@ -106,15 +105,22 @@ async fn update_config(
 
 async fn record_room(
     client: ShowRoomClient,
-    room_slug: &str,
-    room_id: u64,
+    room_info: RoomInfo,
     operator: Operator,
     webhook: Option<WebhookConfig>,
 ) -> anyhow::Result<()> {
+    let room_id = room_info.id;
+    let room_slug = room_info.slug;
     log::debug!("Attempt to record room {room_slug}, id = {room_id}");
 
-    let room_info = client.room_profile(room_id).await?;
-    if !room_info.is_live() {
+    let room_info = client.room_info(&room_slug).await?;
+    if !room_info.is_live {
+        log::debug!("Room {room_slug} is not live, skipping...");
+        return Ok(());
+    }
+
+    let room_profile = client.room_profile(room_id).await?;
+    if !room_profile.is_live() {
         log::debug!("Room {room_slug} is not live, skipping...");
         return Ok(());
     }
@@ -125,8 +131,8 @@ async fn record_room(
         return Ok(());
     };
 
-    let live_id = room_info.live_id;
-    let live_started_at = chrono::DateTime::from_timestamp(room_info.current_live_started_at, 0)
+    let live_id = room_profile.live_id;
+    let live_started_at = chrono::DateTime::from_timestamp(room_profile.current_live_started_at, 0)
         .unwrap()
         .with_timezone(&chrono_tz::Asia::Tokyo)
         .to_rfc3339();
@@ -138,7 +144,7 @@ async fn record_room(
         let body = WebhookBody {
             event: "start",
             prefix: prefix.clone(),
-            profile: room_info.clone(),
+            profile: room_profile.clone(),
         };
         tokio::spawn(async move {
             let client = HttpClient::default();
@@ -167,7 +173,7 @@ async fn record_room(
         let body = WebhookBody {
             event: "end",
             prefix: prefix.clone(),
-            profile: room_info.clone(),
+            profile: room_profile.clone(),
         };
         tokio::spawn(async move {
             let client = HttpClient::default();

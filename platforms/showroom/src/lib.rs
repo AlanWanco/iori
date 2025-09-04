@@ -2,12 +2,12 @@ pub mod constants;
 pub mod inspect;
 pub mod model;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use fake_user_agent::get_chrome_rua;
 use model::*;
 use reqwest::{
-    header::{HeaderMap, HeaderValue, COOKIE, SET_COOKIE},
     Client,
+    header::{COOKIE, HeaderMap, HeaderValue, SET_COOKIE},
 };
 
 #[derive(Clone)]
@@ -72,8 +72,8 @@ impl ShowRoomClient {
         })
     }
 
-    pub async fn get_id_by_room_slug(&self, room_slug: &str) -> anyhow::Result<u64> {
-        let data: serde_json::Value = self
+    pub async fn room_info(&self, room_slug: &str) -> anyhow::Result<RoomInfo> {
+        let data: RoomInfo = self
             .client
             .get(format!(
                 "https://public-api.showroom-cdn.com/room/{room_slug}"
@@ -83,11 +83,7 @@ impl ShowRoomClient {
             .json()
             .await?;
 
-        data
-            .get("id")
-            .ok_or_else(|| anyhow!("id not found"))?
-            .as_u64()
-            .ok_or_else(|| anyhow!("id is not a number"))
+        Ok(data)
     }
 
     pub async fn room_profile(&self, room_id: u64) -> anyhow::Result<RoomProfile> {
@@ -175,12 +171,12 @@ impl ShowRoomClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::{constants::S46_NAGISA_KOJIMA, ShowRoomClient};
+    use crate::{ShowRoomClient, constants::S46_NAGISA_KOJIMA};
 
     #[tokio::test]
     async fn test_get_id_by_room_name() {
         let client = ShowRoomClient::new(None).await.unwrap();
-        let room_id = client.get_id_by_room_slug(S46_NAGISA_KOJIMA).await.unwrap();
-        assert_eq!(room_id, 479510);
+        let info = client.room_info(S46_NAGISA_KOJIMA).await.unwrap();
+        assert_eq!(info.id, 479510);
     }
 }

@@ -17,4 +17,4 @@ shiori-plugin.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }

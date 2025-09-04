@@ -124,3 +124,16 @@ impl RoomProfile {
         self.live_id != 0
     }
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RoomInfo {
+    pub id: u64,
+    #[serde(rename = "url_key")]
+    pub slug: String,
+    pub name: String,
+
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub is_live: bool,
+    pub is_party: Option<bool>,
+}
