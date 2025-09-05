@@ -34,6 +34,7 @@ pub struct OnliveCategory {
 pub struct OnliveRoomInfo {
     pub live_id: u64,
     pub room_id: u64,
+    pub started_at: i64,
 
     pub room_url_key: String,
     pub main_name: String,

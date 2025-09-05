@@ -17,7 +17,10 @@ use iori::{
     hls::HlsLiveSource,
     merge::IoriMerger,
 };
-use iori_showroom::{ShowRoomClient, model::OnliveRoomInfo};
+use iori_showroom::{
+    ShowRoomClient,
+    model::{OnliveRoomInfo, RoomProfile},
+};
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::{config::WebhookConfig, webhook::WebhookBody};
@@ -66,7 +69,7 @@ impl ShowroomMonitor {
                 if let Err(e) = self.clone().scan().await {
                     log::error!("Failed to monitor online rooms: {e}");
                 }
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         });
     }
@@ -106,9 +109,48 @@ impl ShowroomMonitor {
                 let room_slug_clone = room_slug.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = record_room(client, room_info, operator, webhook).await {
+                    let live_id = room_info.live_id;
+                    let live_started_at = chrono::DateTime::from_timestamp(room_info.started_at, 0)
+                        .unwrap()
+                        .with_timezone(&chrono_tz::Asia::Tokyo)
+                        .to_rfc3339();
+                    let prefix = format!("{room_slug}/{live_id}_{live_started_at}");
+
+                    let profile = RoomProfile {
+                        room_name: room_info.main_name.clone(),
+                        live_id,
+                        current_live_started_at: room_info.started_at,
+                    };
+                    if let Some(webhook) = webhook.clone() {
+                        let body = WebhookBody {
+                            event: "start",
+                            prefix: prefix.clone(),
+                            profile: profile.clone(),
+                        };
+                        tokio::spawn(async move {
+                            let client = HttpClient::default();
+                            let _ = client.post(&webhook.url).json(&body).send().await;
+                        });
+                    }
+
+                    // Start recording
+                    if let Err(e) = record_room(client, room_info, prefix.clone(), operator).await {
                         log::error!("Failed to record room {}: {e}", room_slug_clone);
                     }
+
+                    if let Some(webhook) = webhook {
+                        let body = WebhookBody {
+                            event: "end",
+                            prefix: prefix.clone(),
+                            profile,
+                        };
+                        tokio::spawn(async move {
+                            let client = HttpClient::default();
+                            let _ = client.post(webhook.url).json(&body).send().await;
+                        });
+                    }
+
+                    // Remove from recording rooms
                     let mut onlive = onlive_clone.lock().unwrap();
                     onlive.remove(&room_slug_clone);
                 });
@@ -122,14 +164,12 @@ impl ShowroomMonitor {
 async fn record_room(
     client: ShowRoomClient,
     room_info: OnliveRoomInfo,
+    prefix: String,
     operator: Operator,
-    webhook: Option<WebhookConfig>,
 ) -> anyhow::Result<()> {
     let room_id = room_info.room_id;
     let room_slug = &room_info.room_url_key;
     log::debug!("Recording room {room_slug}, id = {room_id}");
-
-    let room_profile = client.room_profile(room_id).await?;
 
     let stream = client.live_streaming_url(room_id).await?;
     let Some(stream) = stream.best(false) else {
@@ -137,29 +177,11 @@ async fn record_room(
         return Ok(());
     };
 
-    let live_id = room_profile.live_id;
-    let live_started_at = chrono::DateTime::from_timestamp(room_profile.current_live_started_at, 0)
-        .unwrap()
-        .with_timezone(&chrono_tz::Asia::Tokyo)
-        .to_rfc3339();
-    let prefix = format!("{room_slug}/{live_id}_{live_started_at}");
+    let live_id = room_info.live_id;
+    log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
 
     let client = HttpClient::default();
-
-    if let Some(webhook) = webhook.clone() {
-        let body = WebhookBody {
-            event: "start",
-            prefix: prefix.clone(),
-            profile: room_profile.clone(),
-        };
-        tokio::spawn(async move {
-            let client = HttpClient::default();
-            let _ = client.post(&webhook.url).json(&body).send().await;
-        });
-    }
-
     let source = HlsLiveSource::new(client, stream.url.clone(), None, None);
-
     let cache = IoriCache::opendal(
         operator.clone(),
         prefix.clone(),
@@ -167,25 +189,11 @@ async fn record_room(
         Some("application/octet-stream".to_string()),
     );
     let merger = IoriMerger::skip();
-
-    log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
     let result = ParallelDownloader::builder()
         .cache(cache)
         .merger(merger)
         .download(source)
         .await;
-
-    if let Some(webhook) = webhook {
-        let body = WebhookBody {
-            event: "end",
-            prefix: prefix.clone(),
-            profile: room_profile.clone(),
-        };
-        tokio::spawn(async move {
-            let client = HttpClient::default();
-            let _ = client.post(webhook.url).json(&body).send().await;
-        });
-    }
 
     Ok(result?)
 }
