@@ -72,6 +72,19 @@ impl ShowRoomClient {
         })
     }
 
+    pub async fn onlives(&self) -> anyhow::Result<Vec<OnliveRoomInfo>> {
+        let data: Onlives = self
+            .client
+            .get("https://www.showroom-live.com/api/live/onlives")
+            .query(&[("skip_serial_code_live", "1")])
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        Ok(data.onlives.into_iter().flat_map(|c| c.lives).collect())
+    }
+
     pub async fn room_info(&self, room_slug: &str) -> anyhow::Result<RoomInfo> {
         let data: RoomInfo = self
             .client

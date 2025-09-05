@@ -21,6 +21,25 @@ impl LiveInfo {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct Onlives {
+    pub onlives: Vec<OnliveCategory>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OnliveCategory {
+    pub lives: Vec<OnliveRoomInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OnliveRoomInfo {
+    pub live_id: u64,
+    pub room_id: u64,
+
+    pub room_url_key: String,
+    pub main_name: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct LiveStreamlingList {
     #[serde(default)]
     pub streaming_url_list: Vec<LiveStream>,

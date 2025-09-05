@@ -1,9 +1,6 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 mod config;
@@ -20,114 +17,123 @@ use iori::{
     hls::HlsLiveSource,
     merge::IoriMerger,
 };
-use iori_showroom::{ShowRoomClient, model::RoomInfo};
+use iori_showroom::{ShowRoomClient, model::OnliveRoomInfo};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio_cron_scheduler::{Job, JobScheduler};
-use uuid::Uuid;
 
 use crate::{config::WebhookConfig, webhook::WebhookBody};
 
-async fn update_config(
-    sched: &mut JobScheduler,
+#[derive(Clone)]
+struct MonitorConfig {
     room_slugs: Vec<String>,
     webhook: Option<WebhookConfig>,
-    map: &mut HashMap<String, Uuid>,
+}
+
+struct ShowroomMonitor {
+    config: Arc<Mutex<MonitorConfig>>,
     operator: Operator,
-) -> anyhow::Result<()> {
-    let mut lock = HashMap::<String, AtomicBool>::new();
-    for room_slug in room_slugs.iter() {
-        lock.insert(room_slug.clone(), AtomicBool::new(false));
+    onlive: Arc<Mutex<HashSet<String>>>,
+}
+
+impl ShowroomMonitor {
+    fn new(
+        room_slugs: Vec<String>,
+        webhook: Option<WebhookConfig>,
+        operator: Operator,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            config: Arc::new(Mutex::new(MonitorConfig {
+                room_slugs,
+                webhook,
+            })),
+            operator,
+            onlive: Arc::new(Mutex::new(HashSet::new())),
+        })
     }
-    let lock = Arc::new(lock);
 
-    // missing: exists in room_slugs, but does not exist in map
-    let missing_slugs: Vec<_> = room_slugs
-        .clone()
-        .into_iter()
-        .filter(|r| !map.contains_key(r))
-        .collect();
-    for slug in missing_slugs {
-        if let Entry::Vacant(entry) = map.entry(slug.clone()) {
-            let operator = operator.clone();
-            let client = ShowRoomClient::new(None).await?;
-            let client_backup = ShowRoomClient::new(None).await?;
-            let room_info = client.room_info(&slug).await?;
-            let webhook = webhook.clone();
-            let lock = lock.clone();
-            let uuid = sched
-                .add(Job::new_async("1/1 * * * * *", move |_, _| {
-                    let operator = operator.clone();
+    fn update_config(self: Arc<Self>, room_slugs: Vec<String>, webhook: Option<WebhookConfig>) {
+        let mut config = self.config.lock().unwrap();
+        config.room_slugs = room_slugs;
+        config.webhook = webhook;
 
-                    let clients = [client.clone(), client_backup.clone()];
-                    let index = AtomicUsize::new(0);
+        log::info!("Updated existing monitoring job configuration");
+    }
 
-                    let room_info = room_info.clone();
-                    let room_slug = room_info.slug.clone();
-                    let lock = lock.clone();
-                    let webhook = webhook.clone();
-                    Box::pin(async move {
-                        let lock = lock.get(&room_info.slug).unwrap();
-                        let client = clients[index.load(Ordering::Relaxed) % clients.len()].clone();
-                        let was_locked = lock.fetch_or(true, Ordering::Relaxed);
+    fn start(self: Arc<Self>) {
+        log::info!("Start monitoring online rooms");
 
-                        if !was_locked {
-                            if let Err(e) =
-                                record_room(client.clone(), room_info, operator, webhook).await
-                            {
-                                log::error!("Failed to record room {room_slug}: {e}");
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = self.clone().scan().await {
+                    log::error!("Failed to monitor online rooms: {e}");
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
 
-                                index.fetch_add(1, Ordering::Relaxed);
-                                tokio::time::sleep(Duration::from_secs(20)).await;
-                            }
-                            lock.fetch_and(false, Ordering::Relaxed);
-                        }
-                    })
-                })?)
-                .await?;
-            entry.insert(uuid);
+    async fn scan(self: Arc<Self>) -> anyhow::Result<()> {
+        let client = ShowRoomClient::new(None).await?;
+
+        let (room_slugs, webhook) = {
+            let config = self.config.lock().unwrap();
+            (config.room_slugs.clone(), config.webhook.clone())
+        };
+
+        let mut onlive_rooms: HashMap<_, _> = client
+            .onlives()
+            .await?
+            .into_iter()
+            .filter(|r| room_slugs.contains(&r.room_url_key))
+            .map(|r| (r.room_url_key.clone(), r))
+            .collect();
+        log::debug!("Found {} online rooms", onlive_rooms.len());
+
+        let mut recording_rooms = self.onlive.lock().unwrap();
+
+        for room_slug in room_slugs {
+            if recording_rooms.contains(&room_slug) {
+                continue;
+            }
+
+            if let Some(room_info) = onlive_rooms.remove(&room_slug) {
+                recording_rooms.insert(room_slug.clone());
+
+                log::info!("Starting recording for room: {}", room_slug);
+                let client = client.clone();
+                let operator = self.operator.clone();
+                let webhook = webhook.clone();
+                let onlive_clone = self.onlive.clone();
+                let room_slug_clone = room_slug.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = record_room(client, room_info, operator, webhook).await {
+                        log::error!("Failed to record room {}: {e}", room_slug_clone);
+                    }
+                    let mut onlive = onlive_clone.lock().unwrap();
+                    onlive.remove(&room_slug_clone);
+                });
+            }
         }
-    }
 
-    // removed: does not exist in room slugs, but in map
-    let removed_slugs: Vec<_> = map
-        .keys()
-        .filter(|k| !room_slugs.contains(k))
-        .map(ToString::to_string)
-        .collect();
-    for slug in removed_slugs {
-        if let Some(uuid) = map.remove(&slug) {
-            sched.remove(&uuid).await?;
-        }
+        Ok(())
     }
-
-    Ok(())
 }
 
 async fn record_room(
     client: ShowRoomClient,
-    room_info: RoomInfo,
+    room_info: OnliveRoomInfo,
     operator: Operator,
     webhook: Option<WebhookConfig>,
 ) -> anyhow::Result<()> {
-    let room_id = room_info.id;
-    let room_slug = room_info.slug;
-    log::debug!("Attempt to record room {room_slug}, id = {room_id}");
-
-    let room_info = client.room_info(&room_slug).await?;
-    if !room_info.is_live {
-        log::debug!("Room {room_slug} is not live, skipping...");
-        return Ok(());
-    }
+    let room_id = room_info.room_id;
+    let room_slug = &room_info.room_url_key;
+    log::debug!("Recording room {room_slug}, id = {room_id}");
 
     let room_profile = client.room_profile(room_id).await?;
-    if !room_profile.is_live() {
-        log::debug!("Room {room_slug} is not live, skipping...");
-        return Ok(());
-    }
 
     let stream = client.live_streaming_url(room_id).await?;
     let Some(stream) = stream.best(false) else {
-        log::debug!("Room {room_slug} is not live, skipping...");
+        log::warn!("No streaming URL available for room {room_slug}");
         return Ok(());
     };
 
@@ -201,21 +207,11 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
 
     let operator = Operator::new(config.s3.into_builder())?.finish();
-    let mut watchers = HashMap::<String, Uuid>::new();
-    let mut sched = JobScheduler::new().await?;
-    update_config(
-        &mut sched,
-        config.showroom.rooms,
-        config.webhook,
-        &mut watchers,
-        operator.clone(),
-    )
-    .await?;
+    let monitor = ShowroomMonitor::new(config.showroom.rooms, config.webhook, operator);
+    monitor.clone().start();
 
     let mut sigusr1_stream = signal(SignalKind::user_defined1())?;
     let mut sigint_stream = signal(SignalKind::interrupt())?;
-
-    sched.start().await?;
 
     loop {
         tokio::select! {
@@ -223,20 +219,15 @@ async fn main() -> anyhow::Result<()> {
                 log::warn!("SIGUSR1 received. Reloading config...");
                 // SIGUSR1 received, reload config
                 let config = Config::load()?;
-                update_config(
-                    &mut sched,
+                monitor.clone().update_config(
                     config.showroom.rooms,
                     config.webhook,
-                    &mut watchers,
-                    operator.clone(),
-                )
-                .await?;
+                );
                 log::warn!("Config reloaded.");
             }
             _ = sigint_stream.recv() => {
                 // SIGINT received, break the loop for graceful shutdown
                 log::warn!("SIGINT received. Shutting down...");
-                sched.shutdown().await?;
                 break;
             }
         }
