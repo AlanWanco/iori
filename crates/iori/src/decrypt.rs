@@ -187,6 +187,9 @@ impl IoriDecryptor {
                     use std::fmt::Write;
                     let mut arg = String::new();
                     for (index, (kid, key)) in keys.iter().enumerate() {
+                        if index != 0 {
+                            arg.push(',');
+                        }
                         write!(arg, "label={}:key_id={kid}:key={key}", index + 1).unwrap();
                     }
 
