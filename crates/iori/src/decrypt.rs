@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
 use m3u8_rs::KeyMethod;
 
 use crate::{
@@ -183,11 +183,16 @@ impl IoriDecryptor {
                         str
                     });
 
-                for (kid, key) in keys {
-                    command
-                        .arg("--keys")
-                        .arg(format!("key_id={}:key={}", kid, key));
+                if !keys.is_empty() {
+                    use std::fmt::Write;
+                    let mut arg = String::new();
+                    for (index, (kid, key)) in keys.iter().enumerate() {
+                        write!(arg, "label={}:key_id={kid}:key={key}", index + 1).unwrap();
+                    }
+
+                    command.arg("--keys").arg(arg);
                 }
+
                 command.spawn()?.wait()?;
 
                 let mut file = File::open(temp_output_file)?;
