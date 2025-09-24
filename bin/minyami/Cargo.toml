@@ -11,10 +11,10 @@ tokio = { workspace = true, features = ["full"] }
 reqwest.workspace = true
 fake_user_agent.workspace = true
 anyhow.workspace = true
-log.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 clap.workspace = true
-pretty_env_logger = "0.5.0"
 
 [[bin]]
 name = "minyami"

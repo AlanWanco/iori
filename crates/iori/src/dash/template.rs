@@ -3,7 +3,7 @@
 // 2. https://github.com/emarsden/dash-mpd-rs/blob/6ebdfb4759adbda8233b5b3520804e23ff86e7de/src/fetch.rs#L435-L466
 
 use regex::{Regex, Replacer};
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, fmt::Write, sync::LazyLock};
 
 // From https://dashif.org/docs/DASH-IF-IOP-v4.3.pdf:
 // "For the avoidance of doubt, only %0[width]d is permitted and no other identifiers. The reason
@@ -92,7 +92,7 @@ impl Replacer for TemplateReplacer<'_> {
 
         let width = caps.get(2).map(|m| m.as_str().parse().unwrap());
         if let Some(width) = width {
-            dst.push_str(&format!("{value:0>width$}", width = width));
+            write!(dst, "{value:0>width$}", width = width).unwrap();
         } else {
             dst.push_str(value.as_str());
         }

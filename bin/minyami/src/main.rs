@@ -11,19 +11,19 @@ use anyhow::bail;
 use clap::Parser;
 use fake_user_agent::get_chrome_rua;
 use iori::{
+    HttpClient, StreamingSource,
     cache::IoriCache,
     dash::archive::CommonDashArchiveSource,
     download::ParallelDownloader,
     hls::{CommonM3u8ArchiveSource, HlsLiveSource, SegmentRange},
     merge::IoriMerger,
-    HttpClient, StreamingSource,
 };
 use iori_nicolive::source::NicoTimeshiftSource;
-use pretty_env_logger::env_logger::Builder;
 use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
     Client, Proxy,
+    header::{HeaderMap, HeaderName, HeaderValue},
 };
+use tracing_subscriber::filter::LevelFilter;
 
 #[derive(clap::Parser, Debug, Clone)]
 #[clap(version = env!("IORI_MINYAMI_VERSION"), author)]
@@ -187,11 +187,11 @@ impl MinyamiArgs {
         Ok(match &self.temp_dir {
             Some(temp_dir) => {
                 if !temp_dir.exists() {
-                    log::error!("Temporary path directory does not exist.");
+                    tracing::error!("Temporary path directory does not exist.");
                     bail!("Temporary path directory does not exist.");
                 } else {
                     let temp_dir = temp_dir.canonicalize()?;
-                    log::info!(
+                    tracing::info!(
                         "Temporary path sets to ${temp_dir}",
                         temp_dir = temp_dir.display()
                     );
@@ -294,20 +294,24 @@ impl MinyamiArgs {
         };
 
         if self.m3u8.contains("dlive.nicovideo.jp") {
-            log::info!("Enhanced mode for Nico-TS enabled");
+            tracing::info!("Enhanced mode for Nico-TS enabled");
 
             let key = self.key.as_deref().expect("Key is required for Nico-TS");
             let (audience_token, quality) = key.split_once(',').unwrap_or((key, "super_high"));
-            log::debug!("audience_token: {audience_token}, quality: {quality}");
+            tracing::debug!("audience_token: {audience_token}, quality: {quality}");
 
             let (live_id, _) = audience_token
                 .split_once('_')
                 .unwrap_or((audience_token, ""));
             let is_channel_live = !live_id.starts_with("lv");
             let wss_url = if is_channel_live {
-                format!("wss://a.live2.nicovideo.jp/unama/wsapi/v2/watch/{live_id}/timeshift?audience_token={audience_token}")
+                format!(
+                    "wss://a.live2.nicovideo.jp/unama/wsapi/v2/watch/{live_id}/timeshift?audience_token={audience_token}"
+                )
             } else {
-                format!("wss://a.live2.nicovideo.jp/wsapi/v2/watch/{live_id}/timeshift?audience_token={audience_token}")
+                format!(
+                    "wss://a.live2.nicovideo.jp/wsapi/v2/watch/{live_id}/timeshift?audience_token={audience_token}"
+                )
             };
 
             let source = NicoTimeshiftSource::new(client, wss_url, quality, false)
@@ -359,96 +363,17 @@ impl MinyamiArgs {
     }
 }
 
-/// Logger modified from pretty-env-logger
-///
-/// Copyright (c) 2017 Sean McArthur
-///
-/// Permission is hereby granted, free of charge, to any person obtaining a copy
-/// of this software and associated documentation files (the "Software"), to deal
-/// in the Software without restriction, including without limitation the rights
-/// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-/// copies of the Software, and to permit persons to whom the Software is
-/// furnished to do so, subject to the following conditions:
-///
-/// The above copyright notice and this permission notice shall be included in all
-/// copies or substantial portions of the Software.
-///
-/// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-/// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-/// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-/// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-/// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-/// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-/// SOFTWARE.
-pub(crate) fn logger() -> Builder {
-    use std::{
-        fmt,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-
-    struct Padded<T> {
-        value: T,
-        width: usize,
-    }
-
-    impl<T: fmt::Display> fmt::Display for Padded<T> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "{: <width$}", self.value, width = self.width)
-        }
-    }
-
-    static MAX_MODULE_WIDTH: AtomicUsize = AtomicUsize::new(0);
-
-    fn max_target_width(target: &str) -> usize {
-        let max_width = MAX_MODULE_WIDTH.load(Ordering::Relaxed);
-        if max_width < target.len() {
-            MAX_MODULE_WIDTH.store(target.len(), Ordering::Relaxed);
-            target.len()
-        } else {
-            max_width
-        }
-    }
-
-    let instance_id = std::env::var("INSTANCE_ID")
-        .map(|i| format!("{i} "))
-        .unwrap_or_default();
-    let mut builder = Builder::new();
-
-    builder
-        .format(move |f, record| {
-            use pretty_env_logger::env_logger::fmt::Color;
-            use std::io::Write;
-
-            let target = record.target();
-            let max_width = max_target_width(target);
-
-            let mut style = f.style();
-            let color = match record.level() {
-                log::Level::Trace => Color::Magenta,
-                log::Level::Debug => Color::Blue,
-                log::Level::Info => Color::Green,
-                log::Level::Warn => Color::Yellow,
-                log::Level::Error => Color::Red,
-            };
-            let level = style.set_color(color).value(record.level());
-
-            let mut style = f.style();
-            let target = style.set_bold(true).value(Padded {
-                value: target,
-                width: max_width,
-            });
-
-            writeln!(f, " {level} {instance_id}{target} > {}", record.args())
-        })
-        .filter_level(log::LevelFilter::Info)
-        .parse_default_env();
-
-    builder
-}
-
 #[tokio::main(worker_threads = 8)]
 async fn main() -> anyhow::Result<()> {
-    logger().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .try_from_env()
+                .unwrap_or_else(|_| "info,i18n_embed=off".into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
 
     MinyamiArgs::parse().run().await?;
 
