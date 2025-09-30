@@ -1,6 +1,6 @@
 use iori::{
-    hls::{segment::M3u8Segment, HlsLiveSource},
     HttpClient, IoriResult, StreamingSource,
+    hls::{HlsLiveSource, segment::M3u8Segment},
 };
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWrite, sync::mpsc};

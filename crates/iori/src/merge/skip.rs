@@ -1,5 +1,5 @@
 use super::Merger;
-use crate::{cache::CacheSource, error::IoriResult, SegmentInfo};
+use crate::{SegmentInfo, cache::CacheSource, error::IoriResult};
 
 pub struct SkipMerger;
 

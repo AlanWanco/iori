@@ -3,8 +3,8 @@ use std::{fmt::Display, sync::Arc};
 use tokio::{io::AsyncWrite, sync::mpsc};
 
 use crate::{
-    decrypt::IoriKey, HttpClient, IoriResult, SegmentFormat, SegmentType, StreamingSegment,
-    StreamingSource,
+    HttpClient, IoriResult, SegmentFormat, SegmentType, StreamingSegment, StreamingSource,
+    decrypt::IoriKey,
 };
 
 pub struct HttpFileSource {

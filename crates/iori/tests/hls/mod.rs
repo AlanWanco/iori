@@ -2,8 +2,8 @@ mod m3u8_rs;
 mod rfc8216;
 
 use wiremock::{
-    matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
 };
 
 async fn setup_mock_server(body: &str) -> (String, MockServer) {

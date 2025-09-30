@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicU8, Arc};
+use std::sync::{Arc, atomic::AtomicU8};
 
 use iori::{cache::memory::MemoryCacheSource, download::ParallelDownloader, merge::SkipMerger};
 

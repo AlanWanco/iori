@@ -2,16 +2,16 @@ use std::{num::ParseIntError, path::PathBuf, str::FromStr, sync::Arc};
 
 use tokio::{
     io::AsyncWrite,
-    sync::{mpsc, Mutex},
+    sync::{Mutex, mpsc},
 };
 use url::Url;
 
 use crate::{
+    StreamingSource,
     error::IoriResult,
     fetch::fetch_segment,
     hls::{segment::M3u8Segment, source::HlsPlaylistSource},
     util::http::HttpClient,
-    StreamingSource,
 };
 
 pub struct CommonM3u8ArchiveSource {

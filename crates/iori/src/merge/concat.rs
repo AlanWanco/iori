@@ -1,6 +1,6 @@
 use super::Merger;
 use crate::{
-    cache::CacheSource, error::IoriResult, util::path::DuplicateOutputFileNamer, SegmentInfo,
+    SegmentInfo, cache::CacheSource, error::IoriResult, util::path::DuplicateOutputFileNamer,
 };
 use std::path::PathBuf;
 use tokio::fs::File;

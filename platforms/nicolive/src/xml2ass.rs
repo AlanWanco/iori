@@ -285,8 +285,8 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
                         for (i, x) in x.iter().enumerate() {
                             let vote_num_bg = format!(
                                 "Dialogue: 5,{start_time_q},{end_time_v},Anketo,,0,0,0,,{{\\an5\\p1\\bord0\\1c&HFFFFC8&\\pos({},{})}}{}",
-                                x - bg_width / 2 + font_size  * 5 / 8,
-                                y - bg_height / 2 + font_size  * 5 / 8,
+                                x - bg_width / 2 + font_size * 5 / 8,
+                                y - bg_height / 2 + font_size * 5 / 8,
                                 num_bg
                             );
                             let vote_num_text = format!(
@@ -297,9 +297,7 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
                             );
                             let vote_bg = format!(
                                 "Dialogue: 5,{start_time_q},{end_time_v},Anketo,,0,0,0,,{{\\an5\\p1\\3c&HFFFFC8&\\bord6\\1c&HD5A07B&\\1a&H78&\\pos({},{})}}{}",
-                                x,
-                                y,
-                                bg
+                                x, y, bg
                             );
                             let text_o_chars = text_o[i].chars().collect::<Vec<_>>();
                             let text_now = if text_o_chars.len() <= 7 {
@@ -422,9 +420,7 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
                             );
                             let vote_bg = format!(
                                 "Dialogue: 5,{start_time_q},{end_time_v},Anketo,,0,0,0,,{{\\an5\\p1\\3c&HFFFFC8&\\bord6\\1c&HD5A07B&\\1a&H78&\\pos({},{})}}{}",
-                                x,
-                                y,
-                                bg
+                                x, y, bg
                             );
                             let text_o_chars = text_o[num].chars().collect::<Vec<_>>();
                             let text_now = if text_o_chars.len() <= 7 {
@@ -445,10 +441,7 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
                             };
                             let vote_text = format!(
                                 "Dialogue: 5,{start_time_q},{end_time_v},Anketo,,0,0,0,,{{\\fs{}\\an5\\bord0\\1c&HFFFFFF&\\pos({},{})}}{}",
-                                font_size_anketo,
-                                x,
-                                y,
-                                text_now
+                                font_size_anketo, x, y, text_now
                             );
                             office_events.push(vote_bg);
                             office_events.push(vote_text);
@@ -588,13 +581,34 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
     writeln!(ass_data, "WrapStyle: 2")?;
     writeln!(ass_data)?;
     writeln!(ass_data, "[V4+ Styles]")?;
-    writeln!(ass_data, "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")?;
-    writeln!(ass_data, "Style: Default,微软雅黑,54,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,0,0,0,0")?;
-    writeln!(ass_data, "Style: Alternate,微软雅黑,36,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,0,0,0,0")?;
-    writeln!(ass_data, "Style: AA,黑体,{aa_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,0")?;
-    writeln!(ass_data, "Style: Office,{font_name},{office_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0")?;
-    writeln!(ass_data, "Style: Anketo,{font_name},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0")?;
-    writeln!(ass_data, "Style: Danmaku,{font_name},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0")?;
+    writeln!(
+        ass_data,
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: Default,微软雅黑,54,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,0,0,0,0"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: Alternate,微软雅黑,36,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,0,0,0,0"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: AA,黑体,{aa_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,0"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: Office,{font_name},{office_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: Anketo,{font_name},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0"
+    )?;
+    writeln!(
+        ass_data,
+        "Style: Danmaku,{font_name},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,1.5,0,2,0,0,10,0"
+    )?;
     writeln!(ass_data)?;
     writeln!(ass_data, "[Events]")?;
     writeln!(

@@ -3,16 +3,16 @@ mod selector;
 mod timeline;
 
 use super::segment::DashSegment;
-use crate::{decrypt::IoriKey, fetch::fetch_segment, HttpClient, IoriResult, StreamingSource};
+use crate::{HttpClient, IoriResult, StreamingSource, decrypt::IoriKey, fetch::fetch_segment};
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 use timeline::MPDTimeline;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use url::Url;
 
 pub struct CommonDashLiveSource {

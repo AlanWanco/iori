@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use fake_user_agent::get_chrome_rua;
 use regex::Regex;
-use reqwest::{header::SET_COOKIE, Client};
+use reqwest::{Client, header::SET_COOKIE};
 
 static NICO_METADATA_REGEXP: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<script id="embedded-data" data-props="([^"]+)""#).unwrap());

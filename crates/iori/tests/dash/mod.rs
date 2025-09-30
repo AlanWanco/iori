@@ -2,8 +2,8 @@ mod dash_mpd_rs;
 mod r#static;
 
 use wiremock::{
-    matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
 };
 
 async fn setup_mock_server(body: &str) -> (String, MockServer) {

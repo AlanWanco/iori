@@ -1,4 +1,4 @@
-use clap::{builder::styling, ArgAction, Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand, builder::styling};
 use clap_handler::Handler;
 
 use crate::ll;

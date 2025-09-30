@@ -1,6 +1,6 @@
 use crate::{
-    decrypt::IoriKey, ByteRange, InitialSegment, RemoteStreamingSegment, SegmentFormat,
-    SegmentType, StreamingSegment,
+    ByteRange, InitialSegment, RemoteStreamingSegment, SegmentFormat, SegmentType,
+    StreamingSegment, decrypt::IoriKey,
 };
 use std::sync::Arc;
 

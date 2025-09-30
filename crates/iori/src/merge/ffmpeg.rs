@@ -7,20 +7,20 @@ use std::{
 };
 
 use rsmpeg::{
+    UnsafeDerefMut,
     avformat::{
         AVFormatContextInput, AVFormatContextOutput, AVIOContextContainer, AVIOContextCustom,
         AVOutputFormat,
     },
     avutil::{AVDictionary, AVMem},
     ffi::{
-        av_log_format_line2, av_log_set_callback, AV_LOG_DEBUG, AV_LOG_ERROR, AV_LOG_INFO,
-        AV_LOG_WARNING,
+        AV_LOG_DEBUG, AV_LOG_ERROR, AV_LOG_INFO, AV_LOG_WARNING, av_log_format_line2,
+        av_log_set_callback,
     },
-    UnsafeDerefMut,
 };
 use tokio::io::AsyncReadExt;
 
-use crate::{cache::CacheSource, IoriResult, SegmentInfo};
+use crate::{IoriResult, SegmentInfo, cache::CacheSource};
 
 // Reference: https://github.com/YeautyYE/ez-ffmpeg/blob/a249e8ad35196cdf345e3f3dc93c87cfb263bfef/src/core/mod.rs#L434-L463
 #[cfg(any(

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    cache::CacheSource, error::IoriResult, merge::Merger, IoriError, SegmentInfo, StreamingSource,
+    IoriError, SegmentInfo, StreamingSource, cache::CacheSource, error::IoriResult, merge::Merger,
 };
 
 pub struct SequencialDownloader<S, M, C>

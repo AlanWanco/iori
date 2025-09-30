@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use fake_user_agent::get_chrome_rua;
 use futures_util::{
+    StreamExt,
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
-    StreamExt,
 };
 use reqwest::Client;
 use reqwest_websocket::{Message, RequestBuilderExt, WebSocket};
@@ -104,7 +104,7 @@ impl WatchClient {
                         return Ok(Some(WatchResponse::MessageServer(msg)));
                     }
                     WatchResponse::Statistics(msg) => {
-                        return Ok(Some(WatchResponse::Statistics(msg)))
+                        return Ok(Some(WatchResponse::Statistics(msg)));
                     }
                     WatchResponse::EventState(_) => (), // dismiss event state
                     WatchResponse::Akashic(msg) => return Ok(Some(WatchResponse::Akashic(msg))),

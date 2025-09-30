@@ -1,5 +1,5 @@
 use super::{CacheSource, CacheSourceReader, CacheSourceWriter};
-use crate::{error::IoriResult, IoriError};
+use crate::{IoriError, error::IoriResult};
 use std::path::PathBuf;
 use tokio::fs::File;
 

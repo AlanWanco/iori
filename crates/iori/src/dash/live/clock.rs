@@ -1,5 +1,5 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use dash_mpd::{UTCTiming, MPD};
+use dash_mpd::{MPD, UTCTiming};
 
 use crate::{HttpClient, IoriError, IoriResult};
 

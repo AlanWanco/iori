@@ -1,9 +1,9 @@
 use iori::{
-    dash::{archive::CommonDashArchiveSource, live::CommonDashLiveSource},
     HttpClient, StreamingSource,
+    dash::{archive::CommonDashArchiveSource, live::CommonDashLiveSource},
 };
 
-use crate::{dash::setup_mock_server, AssertWrapper};
+use crate::{AssertWrapper, dash::setup_mock_server};
 
 // SegmentTemplate + SegmentTimeline
 #[tokio::test]

@@ -3,12 +3,12 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use clap::Parser;
 use clap_handler::handler;
 use iori::{
+    SegmentFormat, SegmentInfo,
     cache::CacheSource,
     merge::{IoriMerger, Merger},
-    SegmentFormat, SegmentInfo,
 };
 use tokio::{
-    fs::{read_dir, File},
+    fs::{File, read_dir},
     io::BufReader,
     sync::Mutex,
 };

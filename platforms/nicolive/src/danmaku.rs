@@ -3,7 +3,7 @@ use prost::Message as _;
 use protocol::{
     data::nicolive_message::Data,
     service::edge::{
-        chunked_entry::Entry, chunked_message::Payload, BackwardSegment, PackedSegment,
+        BackwardSegment, PackedSegment, chunked_entry::Entry, chunked_message::Payload,
     },
 };
 use reqwest::Client;

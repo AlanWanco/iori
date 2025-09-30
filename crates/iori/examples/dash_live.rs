@@ -1,6 +1,6 @@
 use iori::{
-    cache::file::FileCacheSource, dash::live::CommonDashLiveSource, download::ParallelDownloader,
-    merge::SkipMerger, HttpClient,
+    HttpClient, cache::file::FileCacheSource, dash::live::CommonDashLiveSource,
+    download::ParallelDownloader, merge::SkipMerger,
 };
 use tracing::level_filters::LevelFilter;
 
@@ -35,7 +35,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Starting download for live stream: {}", mpd_url);
     match downloader.download(source).await {
         Ok(_) => {
-            tracing::info!("Live stream download finished or stopped (e.g., MPD became static or updater task ended).");
+            tracing::info!(
+                "Live stream download finished or stopped (e.g., MPD became static or updater task ended)."
+            );
         }
         Err(e) => {
             tracing::error!("Download error: {:?}", e);

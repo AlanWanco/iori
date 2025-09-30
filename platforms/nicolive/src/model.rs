@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::danmaku::protocol::{
     data::{
+        Chat, Enquete, OperatorComment,
         chat::{
-            modifier::{Color, ColorName, Font, Pos, Size},
             AccountStatus,
+            modifier::{Color, ColorName, Font, Pos, Size},
         },
         enquete::Status,
-        Chat, Enquete, OperatorComment,
     },
     service::edge::chunked_message::Meta,
 };

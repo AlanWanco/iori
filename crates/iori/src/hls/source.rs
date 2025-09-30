@@ -2,8 +2,8 @@ use std::{
     hash::{Hash, Hasher},
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -11,11 +11,11 @@ use m3u8_rs::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
 use reqwest::Url;
 
 use crate::{
+    InitialSegment, SegmentFormat, SegmentType,
     decrypt::IoriKey,
     error::IoriResult,
     hls::{segment::M3u8Segment, utils::load_m3u8},
     util::http::HttpClient,
-    InitialSegment, SegmentFormat, SegmentType,
 };
 
 use super::utils::load_playlist_with_retry;

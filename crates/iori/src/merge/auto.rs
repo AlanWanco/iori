@@ -1,6 +1,6 @@
 use crate::{
-    cache::CacheSource, error::IoriResult, util::path::IoriPathExt, SegmentFormat, SegmentInfo,
-    SegmentType,
+    SegmentFormat, SegmentInfo, SegmentType, cache::CacheSource, error::IoriResult,
+    util::path::IoriPathExt,
 };
 use std::{
     collections::HashMap,
@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::{fs::File, io::BufWriter, process::Command};
 
-use super::{concat::ConcatSegment, Merger};
+use super::{Merger, concat::ConcatSegment};
 
 /// AutoMerger is a merger that automatically chooses the best strategy to merge segments.
 ///

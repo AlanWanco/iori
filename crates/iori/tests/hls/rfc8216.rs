@@ -1,5 +1,5 @@
-use crate::hls::{setup_mock_server, HlsMock};
-use iori::{hls::HlsPlaylistSource, HttpClient};
+use crate::hls::{HlsMock, setup_mock_server};
+use iori::{HttpClient, hls::HlsPlaylistSource};
 
 #[tokio::test]
 async fn rfc8216_8_1_simple_media_playlist() -> anyhow::Result<()> {

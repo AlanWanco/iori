@@ -1,6 +1,6 @@
 // crates/iori/tests/fixtures/hls/m3u8-rs/media-playlist-with-byterange.m3u8
 
-use iori::{hls::HlsPlaylistSource, ByteRange, HttpClient};
+use iori::{ByteRange, HttpClient, hls::HlsPlaylistSource};
 
 use crate::hls::setup_mock_server;
 

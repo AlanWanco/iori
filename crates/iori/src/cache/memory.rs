@@ -1,5 +1,5 @@
 use super::{CacheSource, CacheSourceReader, CacheSourceWriter};
-use crate::{error::IoriResult, IoriError};
+use crate::{IoriError, error::IoriResult};
 use std::{
     collections::HashMap,
     io::{self, Cursor},
@@ -132,7 +132,7 @@ impl Drop for MemoryWriter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{raw::RawSegment, SegmentInfo};
+    use crate::{SegmentInfo, raw::RawSegment};
 
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

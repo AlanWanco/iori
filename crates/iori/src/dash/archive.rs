@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -11,8 +11,8 @@ use tokio::{io::AsyncWrite, sync::mpsc};
 use url::Url;
 
 use crate::{
-    dash::segment::DashSegment, decrypt::IoriKey, error::IoriResult, fetch::fetch_segment,
-    util::http::HttpClient, InitialSegment, SegmentType, StreamingSource,
+    InitialSegment, SegmentType, StreamingSource, dash::segment::DashSegment, decrypt::IoriKey,
+    error::IoriResult, fetch::fetch_segment, util::http::HttpClient,
 };
 
 use super::{template::Template, url::merge_baseurls};

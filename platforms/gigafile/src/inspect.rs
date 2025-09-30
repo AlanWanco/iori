@@ -1,8 +1,8 @@
 use fake_user_agent::get_chrome_rua;
 use regex::bytes::Regex;
 use reqwest::{
-    header::{CONTENT_DISPOSITION, COOKIE, USER_AGENT},
     Client,
+    header::{CONTENT_DISPOSITION, COOKIE, USER_AGENT},
 };
 use shiori_plugin::*;
 

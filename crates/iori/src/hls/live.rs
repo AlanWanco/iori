@@ -2,16 +2,16 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use tokio::{
     io::AsyncWrite,
-    sync::{mpsc, Mutex},
+    sync::{Mutex, mpsc},
 };
 use url::Url;
 
 use crate::{
+    StreamingSource,
     error::{IoriError, IoriResult},
     fetch::fetch_segment,
     hls::{segment::M3u8Segment, source::HlsPlaylistSource},
     util::{http::HttpClient, mix::VecMix},
-    StreamingSource,
 };
 
 pub struct HlsLiveSource {

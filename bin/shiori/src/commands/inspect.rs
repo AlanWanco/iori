@@ -1,6 +1,6 @@
 use crate::inspect::{
-    inspectors::{DashInspector, HlsInspector, ShortLinkInspector},
     Inspectors,
+    inspectors::{DashInspector, HlsInspector, ShortLinkInspector},
 };
 use clap::Parser;
 use clap_handler::handler;
