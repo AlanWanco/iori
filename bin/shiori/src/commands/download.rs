@@ -1,6 +1,6 @@
-use super::inspect::{get_default_external_inspector, InspectorOptions};
+use super::inspect::{InspectorOptions, get_default_external_inspector};
 use crate::{
-    commands::{update::check_update, ShioriArgs},
+    commands::{ShioriArgs, update::check_update},
     i18n::ClapI18n,
     inspect::InspectPlaylist,
 };
@@ -8,21 +8,21 @@ use clap::{Args, Parser};
 use clap_handler::handler;
 use fake_user_agent::get_chrome_rua;
 use iori::{
+    HttpClient, PlaylistType,
     cache::{
-        opendal::{services, Operator},
         IoriCache,
+        opendal::{Operator, services},
     },
     dash::live::CommonDashLiveSource,
     download::ParallelDownloader,
     hls::HlsLiveSource,
     merge::IoriMerger,
     raw::{HttpFileSource, RawDataSource},
-    utils::{detect_manifest_type, DuplicateOutputFileNamer},
-    HttpClient, PlaylistType,
+    utils::{DuplicateOutputFileNamer, detect_manifest_type},
 };
 use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
     Client, IntoUrl,
+    header::{HeaderMap, HeaderName, HeaderValue},
 };
 use std::{
     num::NonZeroU32,
@@ -139,8 +139,8 @@ where
         if self.decrypt.key.is_none() {
             self.decrypt.key = from.decrypt.key;
         }
-        if self.output.output_mode.output.is_none() {
-            self.output.output_mode.output = from.output.output_mode.output;
+        if self.output.output.is_none() {
+            self.output.output = from.output.output;
         }
         self.extra.playlist_type = from.extra.playlist_type;
 
@@ -296,9 +296,14 @@ pub struct OutputOptions {
     #[clap(flatten)]
     pub output_mode: OutputModeOptions,
 
-    #[clap(long, default_value_t = false)]
-    #[clap(about_ll = "download-output-pipe-keep-segments")]
-    pub pipe_keep_segments: bool,
+    #[clap(short, long)]
+    #[clap(about_ll = "download-output-output")]
+    pub output: Option<PathBuf>,
+
+    #[clap(long = "no-recycle", visible_aliases = ["keep-segments", "pipe-keep-segments"])]
+    #[clap(default_value_t = true, action = clap::ArgAction::SetFalse)]
+    #[clap(about_ll = "download-output-no-recycle")]
+    pub recycle: bool,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -312,10 +317,6 @@ pub struct OutputModeOptions {
     #[clap(about_ll = "download-output-concat")]
     pub concat: bool,
 
-    #[clap(short, long)]
-    #[clap(about_ll = "download-output-output")]
-    pub output: Option<PathBuf>,
-
     #[clap(short = 'P', long)]
     #[clap(about_ll = "download-output-pipe")]
     pub pipe: bool,
@@ -323,25 +324,21 @@ pub struct OutputModeOptions {
     #[clap(short = 'M', long)]
     #[clap(about_ll = "download-output-pipe-mux")]
     pub pipe_mux: bool,
-
-    #[clap(long)]
-    #[clap(about_ll = "download-output-pipe-to")]
-    pub pipe_to: Option<PathBuf>,
 }
 
 impl OutputOptions {
     pub fn into_merger(self) -> IoriMerger {
         if self.output_mode.no_merge {
             IoriMerger::skip()
-        } else if self.output_mode.pipe || self.output_mode.pipe_mux || self.output_mode.pipe_to.is_some() {
+        } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux(!self.pipe_keep_segments, self.output_mode.pipe_to.unwrap_or("-".into()), None)
-            } else if let Some(file) = self.output_mode.pipe_to {
-                IoriMerger::pipe_to_file(!self.pipe_keep_segments, file)
+                IoriMerger::pipe_mux(self.recycle, self.output.unwrap_or("-".into()), None)
+            } else if let Some(file) = self.output {
+                IoriMerger::pipe_to_file(self.recycle, file)
             } else {
-                IoriMerger::pipe(!self.pipe_keep_segments)
+                IoriMerger::pipe(self.recycle)
             }
-        } else if let Some(mut output) = self.output_mode.output {
+        } else if let Some(mut output) = self.output {
             if output.exists() {
                 log::warn!("Output file exists. Will add suffix automatically.");
                 let original_extension = output.extension();
@@ -353,12 +350,12 @@ impl OutputOptions {
             }
 
             if self.output_mode.concat {
-                IoriMerger::concat(output, false)
+                IoriMerger::concat(output, !self.recycle)
             } else {
-                IoriMerger::auto(output, false)
+                IoriMerger::auto(output, !self.recycle)
             }
         } else {
-            unreachable!()
+            unreachable!("Output file must be specified unless --pipe or --no-merge is used")
         }
     }
 }
@@ -379,7 +376,6 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
 
     let mut namer = me
         .output
-        .output_mode
         .output
         .as_ref()
         .map(|p| DuplicateOutputFileNamer::new(p.clone()));
@@ -389,7 +385,7 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
         let mut cmd = me.clone().merge(command);
         if let Some(namer) = namer.as_mut() {
             let output = namer.next_path();
-            cmd.output.output_mode.output = Some(output);
+            cmd.output.output = Some(output);
         }
         cmd.download().await?;
     }
@@ -420,32 +416,32 @@ where
                 playlist_type: Some(data.playlist_type),
             },
             output: OutputOptions {
+                output: data.title.map(|title| {
+                    let path = std::path::Path::new(&title);
+                    // Replace invalid characters with underscores
+                    let filename = path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| {
+                            name.replace(
+                                |c: char| {
+                                    c == '/'
+                                        || c == '\\'
+                                        || c == ':'
+                                        || c == '*'
+                                        || c == '?'
+                                        || c == '"'
+                                        || c == '<'
+                                        || c == '>'
+                                        || c == '|'
+                                },
+                                "_",
+                            )
+                        })
+                        .unwrap_or_else(|| title.clone());
+                    filename.into()
+                }),
                 output_mode: OutputModeOptions {
-                    output: data.title.map(|title| {
-                        let path = std::path::Path::new(&title);
-                        // Replace invalid characters with underscores
-                        let filename = path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .map(|name| {
-                                name.replace(
-                                    |c: char| {
-                                        c == '/'
-                                            || c == '\\'
-                                            || c == ':'
-                                            || c == '*'
-                                            || c == '?'
-                                            || c == '"'
-                                            || c == '<'
-                                            || c == '>'
-                                            || c == '|'
-                                    },
-                                    "_",
-                                )
-                            })
-                            .unwrap_or_else(|| title.clone());
-                        filename.into()
-                    }),
                     pipe_mux: data.streams_hint.unwrap_or(1) > 1,
                     ..Default::default()
                 },
