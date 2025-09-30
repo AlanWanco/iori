@@ -585,6 +585,7 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
     writeln!(ass_data, "ScriptType: v4.00+")?;
     writeln!(ass_data, "PlayResX: 1280")?;
     writeln!(ass_data, "PlayResY: 720")?;
+    writeln!(ass_data, "WrapStyle: 2")?;
     writeln!(ass_data)?;
     writeln!(ass_data, "[V4+ Styles]")?;
     writeln!(ass_data, "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")?;
