@@ -82,9 +82,9 @@ pub async fn merge_command(me: MergeCommand) -> anyhow::Result<()> {
 
     let cache = Arc::new(ExistingLocalCache::new());
     let mut merger = if me.concat {
-        IoriMerger::concat(me.output, true)
+        IoriMerger::concat(me.output, false)
     } else {
-        IoriMerger::auto(me.output, true)
+        IoriMerger::auto(me.output, false)
     };
 
     let files = if me.inputs.len() == 1 && me.inputs[0].is_dir() {

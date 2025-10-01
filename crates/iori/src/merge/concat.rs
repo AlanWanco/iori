@@ -11,16 +11,16 @@ pub struct ConcatAfterMerger {
 
     /// Final output file path.
     output_file: PathBuf,
-    /// Keep downloaded segments after merging.
-    keep_segments: bool,
+    /// Whether to recycle downloaded segments after merging.
+    recycle: bool,
 }
 
 impl ConcatAfterMerger {
-    pub fn new(output_file: PathBuf, keep_segments: bool) -> Self {
+    pub fn new(output_file: PathBuf, recycle: bool) -> Self {
         Self {
             segments: Vec::new(),
             output_file,
-            keep_segments,
+            recycle,
         }
     }
 }
@@ -49,7 +49,7 @@ impl Merger for ConcatAfterMerger {
         tracing::info!("Merging chunks...");
         concat_merge(&mut self.segments, &cache, self.output_file.clone()).await?;
 
-        if !self.keep_segments {
+        if self.recycle {
             tracing::info!("End of merging.");
             tracing::info!("Starting cleaning temporary files.");
             cache.clear().await?;

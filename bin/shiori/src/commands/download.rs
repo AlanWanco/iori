@@ -350,9 +350,9 @@ impl OutputOptions {
             }
 
             if self.output_mode.concat {
-                IoriMerger::concat(output, !self.recycle)
+                IoriMerger::concat(output, self.recycle)
             } else {
-                IoriMerger::auto(output, !self.recycle)
+                IoriMerger::auto(output, self.recycle)
             }
         } else {
             unreachable!("Output file must be specified unless --pipe or --no-merge is used")

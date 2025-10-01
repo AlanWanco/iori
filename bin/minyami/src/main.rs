@@ -248,12 +248,12 @@ impl MinyamiArgs {
             let target_file = self.final_output_file();
             if self.pipe {
                 IoriMerger::pipe_mux(
-                    !self.keep,
                     target_file,
+                    !self.keep,
                     std::env::var("RE_LIVE_PIPE_OPTIONS").ok(),
                 )
             } else {
-                IoriMerger::auto(target_file, self.keep)
+                IoriMerger::auto(target_file, !self.keep)
             }
         } else if self.pipe && self.output.is_none() {
             IoriMerger::pipe(!self.keep)
@@ -262,9 +262,9 @@ impl MinyamiArgs {
         } else {
             let target_file = self.final_output_file();
             if self.pipe {
-                IoriMerger::pipe_to_file(!self.keep, target_file)
+                IoriMerger::pipe_to_file(target_file, !self.keep)
             } else {
-                IoriMerger::auto(target_file, self.keep)
+                IoriMerger::auto(target_file, !self.keep)
             }
         }
     }

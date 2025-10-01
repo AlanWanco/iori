@@ -25,8 +25,8 @@ use super::{Merger, concat::ConcatSegment};
 pub struct AutoMerger {
     segments: HashMap<u64, Vec<ConcatSegment>>,
 
-    /// Keep downloaded segments after merging.
-    keep_segments: bool,
+    /// Whether to recycle downloaded segments after merging.
+    recycle: bool,
 
     has_failed: bool,
 
@@ -37,10 +37,10 @@ pub struct AutoMerger {
 }
 
 impl AutoMerger {
-    pub fn new(output_file: PathBuf, keep_segments: bool) -> Self {
+    pub fn new(output_file: PathBuf, recycle: bool) -> Self {
         Self {
             segments: HashMap::new(),
-            keep_segments,
+            recycle,
             has_failed: false,
 
             output_file,
@@ -153,7 +153,7 @@ impl Merger for AutoMerger {
             }
         };
 
-        if !self.keep_segments {
+        if self.recycle {
             tracing::info!("End of merging.");
             tracing::info!("Starting cleaning temporary files.");
             cache.clear().await?;

@@ -55,17 +55,17 @@ impl IoriMerger {
     }
 
     pub fn pipe_to_writer(
-        recycle: bool,
         writer: impl AsyncWrite + Unpin + Send + Sync + 'static,
+        recycle: bool,
     ) -> Self {
         Self::Pipe(PipeMerger::writer(recycle, writer))
     }
 
-    pub fn pipe_to_file(recycle: bool, output_file: PathBuf) -> Self {
+    pub fn pipe_to_file(output_file: PathBuf, recycle: bool) -> Self {
         Self::Pipe(PipeMerger::file(recycle, output_file))
     }
 
-    pub fn pipe_mux(recycle: bool, output_file: PathBuf, extra_commands: Option<String>) -> Self {
+    pub fn pipe_mux(output_file: PathBuf, recycle: bool, extra_commands: Option<String>) -> Self {
         Self::Pipe(PipeMerger::mux(recycle, output_file, extra_commands))
     }
 
@@ -73,12 +73,12 @@ impl IoriMerger {
         Self::Skip(SkipMerger)
     }
 
-    pub fn concat(output_file: PathBuf, keep_segments: bool) -> Self {
-        Self::Concat(ConcatAfterMerger::new(output_file, keep_segments))
+    pub fn concat(output_file: PathBuf, recycle: bool) -> Self {
+        Self::Concat(ConcatAfterMerger::new(output_file, recycle))
     }
 
-    pub fn auto(output_file: PathBuf, keep_segments: bool) -> Self {
-        Self::Auto(AutoMerger::new(output_file, keep_segments))
+    pub fn auto(output_file: PathBuf, recycle: bool) -> Self {
+        Self::Auto(AutoMerger::new(output_file, recycle))
     }
 }
 
