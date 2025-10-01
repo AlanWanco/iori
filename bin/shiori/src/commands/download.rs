@@ -332,9 +332,9 @@ impl OutputOptions {
             IoriMerger::skip()
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux(self.recycle, self.output.unwrap_or("-".into()), None)
+                IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None)
             } else if let Some(file) = self.output {
-                IoriMerger::pipe_to_file(self.recycle, file)
+                IoriMerger::pipe_to_file(file, self.recycle)
             } else {
                 IoriMerger::pipe(self.recycle)
             }
