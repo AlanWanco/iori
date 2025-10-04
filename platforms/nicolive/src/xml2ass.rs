@@ -385,7 +385,7 @@ pub fn xml2ass(chats: &DanmakuList) -> anyhow::Result<String> {
                         x = vec![160, 480, 800, 1120];
                         y = &y_array[1];
                     } else if text_o.len() > 6 {
-                        bg_height = video_height * 9 / 2;
+                        bg_height = video_height * 2 / 9;
                         y = &y_array[2];
                     }
 
