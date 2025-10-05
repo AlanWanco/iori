@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 
+use iori_showroom::ShowRoomClient;
 use shiori_plugin::*;
-
-use crate::ShowRoomClient;
 
 pub struct ShowroomPlugin;
 
@@ -54,7 +53,7 @@ impl Inspect for ShowroomLiveInspector {
     async fn inspect(
         &self,
         _url: &str,
-        captures: &regex::Captures,
+        captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let client = ShowRoomClient::new(args.get_string("sr-id")).await?;
@@ -96,7 +95,7 @@ impl Inspect for ShowroomTimeshiftInspector {
     async fn inspect(
         &self,
         _url: &str,
-        captures: &regex::Captures,
+        captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let client = ShowRoomClient::new(args.get_string("sr-id")).await?;

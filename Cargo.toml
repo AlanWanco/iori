@@ -15,7 +15,9 @@ iori-ssa = { path = "crates/ssa" }
 iori-nicolive = { path = "platforms/nicolive" }
 iori-showroom = { path = "platforms/showroom" }
 iori-gigafile = { path = "platforms/gigafile" }
-shiori-plugin = { path = "plugins/shiori-plugin" }
+
+shiori-plugin = { path = "plugins/plugin" }
+shiori-plugin-showroom = { path = "plugins/plugin-showroom" }
 
 uri-match = { path = "crates/uri-match" }
 

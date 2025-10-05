@@ -3,8 +3,9 @@ use std::borrow::Cow;
 pub use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+pub use anyhow::anyhow;
 pub use iori;
-pub use regex::Regex;
+pub use regex::{Captures, Regex};
 
 pub trait ShioriPlugin {
     /// Name of the plugin

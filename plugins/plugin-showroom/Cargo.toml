@@ -1,0 +1,12 @@
+[package]
+name = "shiori-plugin-showroom"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+shiori-plugin.workspace = true
+iori-showroom.workspace = true
+anyhow.workspace = true

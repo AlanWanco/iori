@@ -6,8 +6,8 @@ use clap::Parser;
 use clap_handler::handler;
 use iori_gigafile::GigafilePlugin;
 use iori_nicolive::inspect::NicoPlugin;
-use iori_showroom::inspect::ShowroomPlugin;
 use shiori_plugin::{InspectorArguments, InspectorCommand};
+use shiori_plugin_showroom::ShowroomPlugin;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "inspect", short_flag = 'S')]
