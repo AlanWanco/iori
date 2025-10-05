@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["signal", "process", "net", "io-std"] }
 
 fake_user_agent = "0.2.1"
 anyhow = "1.0"
+thiserror = "2"
 log = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

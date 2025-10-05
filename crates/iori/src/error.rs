@@ -40,11 +40,11 @@ pub enum IoriError {
     HexDecodeError(#[from] hex::FromHexError),
 
     #[error(transparent)]
-    RequestError(#[from] reqwest::Error),
+    RequestError(Box<reqwest::Error>),
 
     // MPEG-DASH errors
     #[error(transparent)]
-    MpdParseError(#[from] dash_mpd::DashMpdError),
+    MpdParseError(Box<dash_mpd::DashMpdError>),
 
     #[error("invalid mpd: {0}")]
     MpdParsing(String),
@@ -66,7 +66,7 @@ pub enum IoriError {
 
     #[cfg(feature = "opendal")]
     #[error(transparent)]
-    OpendalError(#[from] opendal::Error),
+    OpendalError(Box<opendal::Error>),
 
     #[error("No period found")]
     NoPeriodFound,
@@ -85,7 +85,7 @@ pub enum IoriError {
 
     #[cfg(feature = "ffmpeg")]
     #[error(transparent)]
-    RsmpegError(#[from] rsmpeg::error::RsmpegError),
+    RsmpegError(Box<rsmpeg::error::RsmpegError>),
 
     #[cfg(feature = "ffmpeg")]
     #[error(transparent)]
@@ -94,6 +94,32 @@ pub enum IoriError {
     #[cfg(feature = "ffmpeg")]
     #[error(transparent)]
     JoinError(#[from] tokio::task::JoinError),
+}
+
+#[cfg(feature = "ffmpeg")]
+impl From<rsmpeg::error::RsmpegError> for IoriError {
+    fn from(err: rsmpeg::error::RsmpegError) -> Self {
+        IoriError::RsmpegError(Box::new(err))
+    }
+}
+
+#[cfg(feature = "opendal")]
+impl From<opendal::Error> for IoriError {
+    fn from(err: opendal::Error) -> Self {
+        IoriError::OpendalError(Box::new(err))
+    }
+}
+
+impl From<dash_mpd::DashMpdError> for IoriError {
+    fn from(err: dash_mpd::DashMpdError) -> Self {
+        IoriError::MpdParseError(Box::new(err))
+    }
+}
+
+impl From<reqwest::Error> for IoriError {
+    fn from(err: reqwest::Error) -> Self {
+        IoriError::RequestError(Box::new(err))
+    }
 }
 
 pub type IoriResult<T> = Result<T, IoriError>;

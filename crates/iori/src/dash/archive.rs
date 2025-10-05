@@ -115,18 +115,18 @@ impl StreamingSource for CommonDashArchiveSource {
                     .or(representation.mimeType);
 
                 let bandwidth = representation.bandwidth.unwrap_or(0);
-                let codecs = representation
+                let _codecs = representation
                     .codecs
                     .as_deref()
                     .or(adaptation.codecs.as_deref());
-                let language = representation
+                let _language = representation
                     .lang
                     .as_deref()
                     .or(adaptation.lang.as_deref());
-                let frame_rate = frame_rate
+                let _frame_rate = frame_rate
                     .as_deref()
                     .or(representation.frameRate.as_deref());
-                let resolution = representation
+                let _resolution = representation
                     .width
                     .and_then(|w| representation.height.map(|h| (w, h)))
                     .map(|(w, h)| format!("{w}x{h}"));
@@ -145,8 +145,8 @@ impl StreamingSource for CommonDashArchiveSource {
                 {
                     if let Some(source_url) = initialization.sourceURL {
                         // let url = base_url;
-                        let init_url = base_url.join(&source_url)?;
-                        let init_range = initialization.range.as_deref();
+                        let _init_url = base_url.join(&source_url)?;
+                        let _init_range = initialization.range.as_deref();
 
                         // TODO: set init
                     } else {

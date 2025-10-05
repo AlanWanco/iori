@@ -25,7 +25,7 @@ hex = "0.4.3"
 mp4decrypt = "0.5.1"
 tempfile = "3"
 rand = "0.8.5"
-thiserror = "1.0"
+thiserror.workspace = true
 url = { version = "2.5.0", features = ["serde"] }
 dash-mpd.workspace = true
 regex.workspace = true

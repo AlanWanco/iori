@@ -10,9 +10,12 @@ You can get the pre-compiled executable files from `artifacts`. (Like [this](htt
 
 - `bin`: Contains the main executable crates, like `minyami` and `shiori`.
 - `crates`: Core library crates, such as `iori` (the downloader core) and `iori-ssa` (Sample-AES decryption).
-- `plugins`: Plugin system related crates, like `shiori-plugin`.
+- `plugins`: Plugin system related crates, like `shiori-plugin`, `shiori-plugin-showroom`.
 - `platforms`: Video platform-specific implementations, such as `iori-nicolive` and `iori-showroom`.
 
 ## Road to 1.0
 
 - [ ] Separate decrypt and download
+- [ ] Support `EXT-X-DISCONTINUITY` for HLS
+- [ ] Support custom descryption logic
+- [ ] Support custom `StreamingSource` for plugins

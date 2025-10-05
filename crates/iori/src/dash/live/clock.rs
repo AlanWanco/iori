@@ -85,7 +85,7 @@ async fn sync_time(timing: &[UTCTiming], clock: &mut Clock, client: HttpClient) 
                                     },
                                     Err(e) => {
                                         tracing::warn!(url, error = %e, "Failed to read xsdate/iso8601 response text");
-                                        last_error = Some(IoriError::RequestError(e));
+                                        last_error = Some(IoriError::RequestError(Box::new(e)));
                                     }
                                 }
                             } else {
@@ -95,7 +95,7 @@ async fn sync_time(timing: &[UTCTiming], clock: &mut Clock, client: HttpClient) 
                         }
                         Err(e) => {
                             tracing::warn!(url, error = %e, "HTTP GET request for xsdate/iso8601 failed");
-                            last_error = Some(IoriError::RequestError(e));
+                            last_error = Some(IoriError::RequestError(Box::new(e)));
                         }
                     }
                 } else {
@@ -175,7 +175,7 @@ async fn sync_time(timing: &[UTCTiming], clock: &mut Clock, client: HttpClient) 
                         }
                         Err(e) => {
                             tracing::warn!(url, error = %e, "HTTP HEAD request failed");
-                            last_error = Some(IoriError::RequestError(e));
+                            last_error = Some(IoriError::RequestError(Box::new(e)));
                         }
                     }
                 } else {

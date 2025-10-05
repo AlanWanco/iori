@@ -1928,7 +1928,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "tokio",
  "tokio-util",
  "tracing",
@@ -2016,7 +2016,7 @@ dependencies = [
  "log",
  "memchr",
  "mpeg2ts",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -4275,7 +4275,7 @@ name = "uri-match"
 version = "0.1.0"
 dependencies = [
  "matchit",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
  "url",
  "wildcard",
 ]
