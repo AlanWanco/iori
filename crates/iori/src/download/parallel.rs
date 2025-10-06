@@ -134,14 +134,18 @@ where
                                 .await
                                 .push(segment.file_name().to_string());
                             segments_failed.fetch_add(1, Ordering::Relaxed);
-                            _ = merger.lock().await.fail(segment_info, cache).await;
+                            if let Err(e) = merger.lock().await.fail(segment_info, cache).await {
+                                tracing::error!("Failed to mark {filename} as failed: {e}");
+                            }
                             return;
                         }
 
                         let writer = cache.open_writer(&segment_info).await.transpose();
                         let Some(writer) = writer else {
                             segments_downloaded.fetch_add(1, Ordering::Relaxed);
-                            _ = merger.lock().await.update(segment_info, cache).await;
+                            if let Err(e) = merger.lock().await.update(segment_info, cache).await {
+                                tracing::error!("Failed to mark {filename} as downloaded: {e}");
+                            }
                             return;
                         };
 
