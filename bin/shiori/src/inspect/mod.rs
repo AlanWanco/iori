@@ -1,7 +1,7 @@
 pub mod inspectors;
 
 pub use shiori_plugin::*;
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::commands::STYLES;
@@ -111,6 +111,7 @@ impl PluginManager {
                     )
                     .await;
                     match inspect_branch {
+                        InspectBranch::Skip => continue,
                         InspectBranch::Redirect(redirect_url) => {
                             url = Cow::Owned(redirect_url);
                             continue 'outer;
@@ -159,6 +160,7 @@ struct InspectorItem {
 }
 
 enum InspectBranch {
+    Skip,
     Redirect(String),
     Found(Vec<InspectPlaylist>),
     NotFound,
@@ -171,6 +173,7 @@ async fn handle_inspect_result(
     choose_candidate: fn(Vec<InspectCandidate>) -> InspectCandidate,
 ) -> InspectBranch {
     match result {
+        Some(InspectResult::NotMatch) => InspectBranch::Skip,
         Some(InspectResult::Candidates(candidates)) => {
             let candidate = choose_candidate(candidates);
             let result = inspector

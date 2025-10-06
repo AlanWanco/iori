@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+pub use std::borrow::Cow;
 
 pub use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -163,6 +163,8 @@ pub trait InspectorArguments: Send + Sync {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum InspectResult {
+    /// This site handler can not handle this URL
+    NotMatch,
     /// Found multiple available sources to choose
     Candidates(Vec<InspectCandidate>),
     /// Inspect data is found
