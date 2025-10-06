@@ -305,6 +305,10 @@ pub struct OutputOptions {
     #[clap(default_value_t = true, action = clap::ArgAction::SetFalse)]
     #[clap(about_ll = "download-output-no-recycle")]
     pub recycle: bool,
+
+    /// Proxy server bind address (default: 127.0.0.1:8080)
+    #[clap(long, default_value = "127.0.0.1:8080")]
+    pub proxy_addr: String,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -325,12 +329,20 @@ pub struct OutputModeOptions {
     #[clap(short = 'M', long)]
     #[clap(about_ll = "download-output-pipe-mux")]
     pub pipe_mux: bool,
+
+    #[clap(long)]
+    #[clap(about_ll = "download-output-proxy")]
+    pub proxy: bool,
 }
 
 impl OutputOptions {
     pub fn into_merger(self) -> IoriMerger {
         if self.output_mode.no_merge {
             IoriMerger::skip()
+        } else if self.output_mode.proxy {
+            let addr: std::net::SocketAddr =
+                self.proxy_addr.parse().expect("Invalid proxy address");
+            IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
                 IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None)

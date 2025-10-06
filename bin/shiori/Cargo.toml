@@ -54,8 +54,9 @@ rust-embed = "8.7.0"
 winresource = "0.1.22"
 
 [features]
-default = []
+default = ["proxy"]
 ffmpeg = ["iori/ffmpeg"]
+proxy = ["iori/proxy"]
 
 [[bin]]
 name = "shiori"

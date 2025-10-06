@@ -4,11 +4,15 @@ mod concat;
 mod ffmpeg;
 mod pipe;
 mod skip;
+#[cfg(feature = "proxy")]
+mod proxy;
 
 pub use auto::AutoMerger;
 pub use concat::ConcatAfterMerger;
 pub use pipe::PipeMerger;
 pub use skip::SkipMerger;
+#[cfg(feature = "proxy")]
+pub use proxy::ProxyMerger;
 use tokio::io::AsyncWrite;
 
 use crate::{SegmentInfo, cache::CacheSource, error::IoriResult};
@@ -47,6 +51,8 @@ pub enum IoriMerger {
     Skip(SkipMerger),
     Concat(ConcatAfterMerger),
     Auto(AutoMerger),
+    #[cfg(feature = "proxy")]
+    Proxy(ProxyMerger),
 }
 
 impl IoriMerger {
@@ -80,6 +86,11 @@ impl IoriMerger {
     pub fn auto(output_file: PathBuf, recycle: bool) -> Self {
         Self::Auto(AutoMerger::new(output_file, recycle))
     }
+
+    #[cfg(feature = "proxy")]
+    pub fn proxy(addr: std::net::SocketAddr) -> Self {
+        Self::Proxy(ProxyMerger::new(addr))
+    }
 }
 
 impl Merger for IoriMerger {
@@ -91,6 +102,8 @@ impl Merger for IoriMerger {
             Self::Skip(merger) => merger.update(segment, cache).await,
             Self::Concat(merger) => merger.update(segment, cache).await,
             Self::Auto(merger) => merger.update(segment, cache).await,
+            #[cfg(feature = "proxy")]
+            Self::Proxy(merger) => merger.update(segment, cache).await,
         }
     }
 
@@ -100,6 +113,8 @@ impl Merger for IoriMerger {
             Self::Skip(merger) => merger.fail(segment, cache).await,
             Self::Concat(merger) => merger.fail(segment, cache).await,
             Self::Auto(merger) => merger.fail(segment, cache).await,
+            #[cfg(feature = "proxy")]
+            Self::Proxy(merger) => merger.fail(segment, cache).await,
         }
     }
 
@@ -109,6 +124,8 @@ impl Merger for IoriMerger {
             Self::Skip(merger) => merger.finish(cache).await,
             Self::Concat(merger) => merger.finish(cache).await,
             Self::Auto(merger) => merger.finish(cache).await,
+            #[cfg(feature = "proxy")]
+            Self::Proxy(merger) => merger.finish(cache).await,
         }
     }
 }

@@ -47,6 +47,10 @@ impl StreamingSegment for M3u8Segment {
         self.key.clone()
     }
 
+    fn duration(&self) -> Option<f32> {
+        Some(self.duration)
+    }
+
     fn r#type(&self) -> SegmentType {
         self.segment_type.unwrap_or(SegmentType::Video)
     }

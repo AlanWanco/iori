@@ -40,6 +40,9 @@ tokio-util = { version = "0.7.15", features = ["io"] }
 futures = "0.3.31"
 opendal = { version = "0.53.1", optional = true }
 rsmpeg = { version = "0.16.0", optional = true }
+axum = { version = "0.8", optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.6", features = ["fs", "cors"], optional = true }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 command-fds = { version = "0.3.0", features = ["tokio"] }
@@ -51,6 +54,7 @@ opendal-fs = ["opendal/services-fs"]
 opendal-s3 = ["opendal/services-s3"]
 ffmpeg = ["dep:rsmpeg"]
 ffmpeg-link-system = ["rsmpeg/link_system_ffmpeg"]
+proxy = ["dep:axum", "dep:tower", "dep:tower-http"]
 
 [dev-dependencies]
 anyhow.workspace = true
