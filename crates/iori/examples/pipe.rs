@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
         .merger(merger)
         .concurrency(NonZeroU32::new(8).unwrap())
         .retries(8)
+        .ctrlc_handler()
         .download(source)
         .await?;
 

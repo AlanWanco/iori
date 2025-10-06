@@ -3,14 +3,39 @@ use crate::{
     error::IoriResult, merge::Merger,
 };
 use std::{
+    future::Future,
     num::NonZeroU32,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore, oneshot};
+
+/// Spawn a task that listens for Ctrl-C signals and stops the downloader
+///
+/// The first Ctrl-C will trigger a graceful shutdown by calling `stop_signal.stop()`.
+/// The second Ctrl-C will force exit the process.
+pub fn spawn_ctrlc_handler() -> oneshot::Receiver<()> {
+    let (stop_signal, receiver) = oneshot::channel();
+
+    tokio::spawn(async move {
+        // wait for the first ctrl-c to stop downloader
+        if tokio::signal::ctrl_c().await.is_ok() {
+            tracing::info!("Ctrl-C received, stopping downloader.");
+            stop_signal.send(()).expect("Failed to send stop signal");
+        }
+
+        // wait for the second ctrl-c to force exit
+        if tokio::signal::ctrl_c().await.is_ok() {
+            tracing::info!("Ctrl-C received again, force exit.");
+            std::process::exit(1);
+        }
+    });
+
+    receiver
+}
 
 pub struct ParallelDownloader<S, M, C>
 where
@@ -30,6 +55,7 @@ where
     merger: Arc<Mutex<M>>,
 
     retries: u32,
+    stop_signal: oneshot::Receiver<()>,
 }
 
 impl<M, C> ParallelDownloader<(), M, C>
@@ -54,6 +80,7 @@ where
         cache: C,
         concurrency: NonZeroU32,
         retries: u32,
+        stop_signal: oneshot::Receiver<()>,
     ) -> Self {
         let permits = Arc::new(Semaphore::new(concurrency.get() as usize));
 
@@ -70,6 +97,7 @@ where
             failed_segments_name: Arc::new(Mutex::new(Vec::new())),
 
             retries,
+            stop_signal,
         }
     }
 
@@ -80,21 +108,6 @@ where
         );
 
         let mut receiver = self.source.fetch_info().await?;
-
-        // ctrl-c handler
-        let is_closed = Arc::new(AtomicBool::new(false));
-        let is_closed_inner = is_closed.clone();
-        let ctrlc_handler = tokio::spawn(async move {
-            // wait for the first ctrl-c to stop downloader
-            tokio::signal::ctrl_c().await.unwrap();
-            tracing::info!("Ctrl-C received, stopping downloader.");
-            is_closed_inner.store(true, Ordering::Relaxed);
-
-            // wait for the second ctrl-c to force exit
-            tokio::signal::ctrl_c().await.unwrap();
-            tracing::info!("Ctrl-C received again, force exit.");
-            std::process::exit(1);
-        });
 
         while let Some(segments) = receiver.recv().await {
             // If the playlist is not available, the downloader will be stopped.
@@ -203,7 +216,7 @@ where
                 });
             }
 
-            if is_closed.load(Ordering::Relaxed) {
+            if self.stop_signal.is_terminated() {
                 break;
             }
         }
@@ -226,7 +239,6 @@ where
             }
         }
 
-        ctrlc_handler.abort();
         self.merger.lock().await.finish(self.cache).await
     }
 }
@@ -244,6 +256,7 @@ pub struct ParallelDownloaderBuilder<M, C, MR = ()> {
     retries: u32,
     merger: Option<M>,
     cache: Option<C>,
+    stop_signal: Option<oneshot::Receiver<()>>,
 
     _merge_result: std::marker::PhantomData<MR>,
 }
@@ -259,6 +272,7 @@ where
             retries: 3,
             merger: None,
             cache: None,
+            stop_signal: None,
             _merge_result: Default::default(),
         }
     }
@@ -283,6 +297,16 @@ where
         self
     }
 
+    pub fn stop_signal(mut self, stop_signal: oneshot::Receiver<()>) -> Self {
+        self.stop_signal = Some(stop_signal);
+        self
+    }
+
+    pub fn ctrlc_handler(mut self) -> Self {
+        self.stop_signal = Some(spawn_ctrlc_handler());
+        self
+    }
+
     fn build<S>(self, source: S) -> ParallelDownloader<S, M, C>
     where
         S: StreamingSource + Send + Sync + 'static,
@@ -293,6 +317,7 @@ where
             self.cache.expect("Cache is not set"),
             self.concurrency,
             self.retries,
+            self.stop_signal.expect("Stop signal is not set"),
         )
     }
 

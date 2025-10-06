@@ -14,7 +14,7 @@ use iori::{
         opendal::{Operator, services},
     },
     dash::live::CommonDashLiveSource,
-    download::ParallelDownloader,
+    download::{ParallelDownloader, spawn_ctrlc_handler},
     hls::HlsLiveSource,
     merge::IoriMerger,
     raw::{HttpFileSource, RawDataSource},
@@ -31,6 +31,7 @@ use std::{
     str::FromStr,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::oneshot;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "download", visible_alias = "dl", short_flag = 'D')]
@@ -71,7 +72,7 @@ impl<Ext> DownloadCommand<Ext>
 where
     Ext: Args + Default,
 {
-    pub async fn download(self) -> anyhow::Result<()> {
+    pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let client = self.http.into_client(&self.url);
 
         let playlist_type = match self.extra.playlist_type {
@@ -91,7 +92,8 @@ where
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
-            .merger(self.output.into_merger());
+            .merger(self.output.into_merger())
+            .stop_signal(stop_signal);
 
         match playlist_type {
             PlaylistType::HLS | PlaylistType::Unknown => {
@@ -400,7 +402,7 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
             let output = namer.next_path();
             cmd.output.output = Some(output);
         }
-        cmd.download().await?;
+        cmd.download(spawn_ctrlc_handler()).await?;
     }
 
     // Check for update, but do not throw error if failed

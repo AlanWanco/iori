@@ -19,6 +19,7 @@ async fn test_parallel_downloader_with_failed_retry() -> anyhow::Result<()> {
         .merger(SkipMerger)
         .cache(cache.clone())
         .retries(1)
+        .ctrlc_handler()
         .download(source)
         .await?;
 
@@ -44,6 +45,7 @@ async fn test_parallel_downloader_with_success_retry() -> anyhow::Result<()> {
         .merger(SkipMerger)
         .cache(cache.clone())
         .retries(3)
+        .ctrlc_handler()
         .download(source)
         .await?;
 

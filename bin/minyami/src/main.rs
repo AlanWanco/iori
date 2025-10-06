@@ -278,6 +278,7 @@ impl MinyamiArgs {
             .merger(self.merger())
             .concurrency(self.threads)
             .retries(self.retries)
+            .ctrlc_handler()
             .download(source)
             .await?;
         Ok(())

@@ -30,7 +30,10 @@ async fn main() -> anyhow::Result<()> {
     let cache = FileCacheSource::new(cache_dir)?;
     let merger = SkipMerger;
 
-    let downloader = ParallelDownloader::builder().cache(cache).merger(merger);
+    let downloader = ParallelDownloader::builder()
+        .cache(cache)
+        .merger(merger)
+        .ctrlc_handler();
 
     tracing::info!("Starting download for live stream: {}", mpd_url);
     match downloader.download(source).await {

@@ -192,6 +192,7 @@ async fn record_room(
     let result = ParallelDownloader::builder()
         .cache(cache)
         .merger(merger)
+        .ctrlc_handler()
         .download(source)
         .await;
 

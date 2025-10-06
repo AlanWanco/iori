@@ -67,7 +67,7 @@ impl Inspect for SheetaInspector {
         let host = captures
             .name("host")
             .map(|s| s.as_str())
-            .or_else(|| self.host.as_deref())
+            .or(self.host.as_deref())
             .with_context(|| "Missing sheeta host")?;
         let client = SheetaClient::common(host).await?;
 
