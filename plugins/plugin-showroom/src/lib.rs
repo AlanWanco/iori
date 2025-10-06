@@ -56,7 +56,7 @@ impl Inspect for ShowroomLiveInspector {
         captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
-        let client = ShowRoomClient::new(args.get_string("sr-id")).await?;
+        let client = ShowRoomClient::new(args.get_string("showroom-user-session")).await?;
 
         let room_name = captures.name("room_name").unwrap();
         let room_id = match room_name.as_str().parse::<u64>() {

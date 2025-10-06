@@ -14,7 +14,7 @@ impl ShioriPlugin for SheetaPlugin {
     }
 
     fn description(&self) -> Option<Cow<'static, str>> {
-        None
+        Some("Extract videos from nicochannel+ based platforms.".into())
     }
 
     fn register(&self, registry: &mut dyn InspectorRegistry) -> anyhow::Result<()> {
@@ -23,6 +23,14 @@ impl ShioriPlugin for SheetaPlugin {
             Box::new(SheetaInspector {
                 name: "nicochannel+",
                 host: Some("nicochannel.jp".to_string()),
+            }),
+            PriorityHint::Normal,
+        );
+        registry.register_inspector(
+            SheetaClient::site_regex("qlover.jp"),
+            Box::new(SheetaInspector {
+                name: "qlover+",
+                host: Some("qlover.jp".to_string()),
             }),
             PriorityHint::Normal,
         );

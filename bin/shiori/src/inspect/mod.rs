@@ -1,7 +1,7 @@
 pub mod inspectors;
 
 pub use shiori_plugin::*;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
 
 use crate::commands::STYLES;
@@ -12,7 +12,9 @@ pub struct PluginManager {
     wait: Option<u64>,
 
     plugins: Vec<Box<dyn ShioriPlugin + Send + Sync + 'static>>,
-    inspectors: Vec<InspectorItem>,
+    plugin_inspectors: HashMap<String, Vec<InspectorItem>>,
+
+    temp_inspectors: Vec<InspectorItem>,
 }
 
 impl PluginManager {
@@ -23,14 +25,14 @@ impl PluginManager {
     /// Add inspector to front queue
     pub fn add(&mut self, plugin: impl ShioriPlugin + Send + Sync + 'static) -> &mut Self {
         plugin.register(self).unwrap();
+        let mut inspectors = std::mem::take(&mut self.temp_inspectors);
+        self.plugin_inspectors
+            .entry(plugin.name().to_string())
+            .and_modify(|e| e.extend(std::mem::take(&mut inspectors)))
+            .or_insert(inspectors);
         self.plugins.push(Box::new(plugin));
 
         self
-    }
-
-    fn sort(&mut self) {
-        self.inspectors.sort_by_key(|item| item.priority);
-        self.inspectors.reverse();
     }
 
     pub fn wait(mut self, value: bool) -> Self {
@@ -75,6 +77,22 @@ impl PluginManager {
                     result.push('\n');
                 }
             }
+            if let Some(inspectors) = self.plugin_inspectors.get(plugin.name().as_ref()) {
+                result.push('\n');
+
+                for inspector in inspectors {
+                    result.push_str(&" ".repeat(10));
+                    result.push_str(&format!(
+                        "{style}{}: {style:#}\n",
+                        inspector.inspector.name(),
+                        style = STYLES.get_valid()
+                    ));
+                    result.push_str(&" ".repeat(14));
+                    result.push_str(inspector.regex.as_str());
+
+                    result.push('\n');
+                }
+            }
         }
         result
     }
@@ -93,9 +111,13 @@ impl PluginManager {
     ) -> anyhow::Result<(Cow<'static, str>, Vec<InspectPlaylist>)> {
         let mut url = Cow::Borrowed(url);
 
+        let mut inspectors: Vec<_> = self.plugin_inspectors.values().flatten().collect();
+        inspectors.sort_by_key(|item| item.priority);
+        inspectors.reverse();
+
         // As `InspectBranch::Redirect` exists, we need a loop
         let result = 'outer: loop {
-            for item in self.inspectors.iter() {
+            for item in inspectors.iter() {
                 // If a regex matches, we try to inspect it
                 if let Some(captures) = item.regex.captures(&url) {
                     let inspect_result = item
@@ -144,12 +166,11 @@ impl InspectorRegistry for PluginManager {
         inspector: Box<dyn Inspect>,
         priority_hint: PriorityHint,
     ) {
-        self.inspectors.push(InspectorItem {
+        self.temp_inspectors.push(InspectorItem {
             regex,
             inspector,
             priority: priority_hint,
         });
-        self.sort();
     }
 }
 
