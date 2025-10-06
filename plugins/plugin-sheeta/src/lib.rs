@@ -34,7 +34,8 @@ impl ShioriPlugin for SheetaPlugin {
             }),
             PriorityHint::Low,
         );
-        todo!()
+
+        Ok(())
     }
 }
 
