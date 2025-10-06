@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::inspect::{Inspect, InspectResult};
 use anyhow::Context;
 use clap_handler::async_trait;

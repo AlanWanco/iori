@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use shiori_plugin::*;

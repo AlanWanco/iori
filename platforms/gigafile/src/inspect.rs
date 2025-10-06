@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use fake_user_agent::get_chrome_rua;
 use reqwest::{
     Client,

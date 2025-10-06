@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use iori_showroom::ShowRoomClient;
 use shiori_plugin::*;
 
