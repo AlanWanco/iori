@@ -1,15 +1,8 @@
 use crate::{
     IoriError, SegmentInfo, StreamingSegment, StreamingSource, cache::CacheSource,
-    error::IoriResult, merge::Merger,
+    download::DownloaderApp, error::IoriResult, merge::Merger,
 };
-use std::{
-    future::Future,
-    num::NonZeroU32,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{future::Future, num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
 
@@ -37,19 +30,17 @@ pub fn spawn_ctrlc_handler() -> oneshot::Receiver<()> {
     receiver
 }
 
-pub struct ParallelDownloader<S, M, C>
+pub struct ParallelDownloader<S, M, C, A>
 where
     M: Merger,
     C: CacheSource,
+    A: DownloaderApp,
 {
     source: Arc<S>,
     concurrency: NonZeroU32,
     permits: Arc<Semaphore>,
 
-    total: Arc<AtomicUsize>,
-    downloaded: Arc<AtomicUsize>,
-    failed: Arc<AtomicUsize>,
-    failed_segments_name: Arc<Mutex<Vec<String>>>,
+    app: Arc<A>,
 
     cache: Arc<C>,
     merger: Arc<Mutex<M>>,
@@ -58,23 +49,25 @@ where
     stop_signal: oneshot::Receiver<()>,
 }
 
-impl<M, C> ParallelDownloader<(), M, C>
+impl<M, C> ParallelDownloader<(), M, C, ()>
 where
     M: Merger + Send + Sync + 'static,
     C: CacheSource + Send + Sync + 'static,
 {
-    pub fn builder() -> ParallelDownloaderBuilder<M, C, M::Result> {
+    pub fn builder() -> ParallelDownloaderBuilder<M, C, M::Result, ()> {
         ParallelDownloaderBuilder::new()
     }
 }
 
-impl<S, M, C> ParallelDownloader<S, M, C>
+impl<S, M, C, A> ParallelDownloader<S, M, C, A>
 where
     S: StreamingSource + Send + Sync + 'static,
     M: Merger + Send + Sync + 'static,
     C: CacheSource + Send + Sync + 'static,
+    A: DownloaderApp + Send + Sync + 'static,
 {
     pub(crate) fn new(
+        app: A,
         source: S,
         merger: M,
         cache: C,
@@ -85,16 +78,12 @@ where
         let permits = Arc::new(Semaphore::new(concurrency.get() as usize));
 
         Self {
+            app: Arc::new(app),
             source: Arc::new(source),
             merger: Arc::new(Mutex::new(merger)),
             cache: Arc::new(cache),
             concurrency,
             permits,
-
-            total: Arc::new(AtomicUsize::new(0)),
-            downloaded: Arc::new(AtomicUsize::new(0)),
-            failed: Arc::new(AtomicUsize::new(0)),
-            failed_segments_name: Arc::new(Mutex::new(Vec::new())),
 
             retries,
             stop_signal,
@@ -102,10 +91,7 @@ where
     }
 
     pub async fn download(self) -> IoriResult<M::Result> {
-        tracing::info!(
-            "Start downloading with {} thread(s).",
-            self.concurrency.get()
-        );
+        self.app.on_start().await?;
 
         let mut receiver = self.source.fetch_info().await?;
 
@@ -117,18 +103,16 @@ where
             }
             let segments = segments?;
 
-            self.total.fetch_add(segments.len(), Ordering::Relaxed);
-            tracing::info!("{} new segments were added to queue.", segments.len());
+            self.app
+                .on_receive_segments(&segments.iter().map(SegmentInfo::from).collect::<Vec<_>>())
+                .await;
 
             for segment in segments {
                 let segment_info = SegmentInfo::from(&segment);
 
                 let permit = self.permits.clone().acquire_owned().await.unwrap();
-                let segments_downloaded = self.downloaded.clone();
-                let segments_failed = self.failed.clone();
-                let failed_segments_name = self.failed_segments_name.clone();
-                let segments_total = self.total.clone();
 
+                let app = self.app.clone();
                 let source = self.source.clone();
                 let merger = self.merger.clone();
                 let cache = self.cache.clone();
@@ -139,14 +123,7 @@ where
 
                     loop {
                         if retries == 0 {
-                            tracing::error!(
-                                "Processing {filename} failed, max retries exceed, drop."
-                            );
-                            failed_segments_name
-                                .lock()
-                                .await
-                                .push(segment.file_name().to_string());
-                            segments_failed.fetch_add(1, Ordering::Relaxed);
+                            app.on_failed_segment(&segment_info).await;
                             if let Err(e) = merger.lock().await.fail(segment_info, cache).await {
                                 tracing::error!("Failed to mark {filename} as failed: {e}");
                             }
@@ -155,7 +132,7 @@ where
 
                         let writer = cache.open_writer(&segment_info).await.transpose();
                         let Some(writer) = writer else {
-                            segments_downloaded.fetch_add(1, Ordering::Relaxed);
+                            app.on_downloaded_segment(&segment_info).await;
                             if let Err(e) = merger.lock().await.update(segment_info, cache).await {
                                 tracing::error!("Failed to mark {filename} as downloaded: {e}");
                             }
@@ -195,19 +172,7 @@ where
 
                     // here we can not drop semaphore, because the merger might take some time to process the merging
 
-                    let downloaded = segments_downloaded.fetch_add(1, Ordering::Relaxed)
-                        + 1
-                        + segments_failed.load(Ordering::Relaxed);
-                    let total = segments_total.load(Ordering::Relaxed);
-                    let percentage = if total == 0 {
-                        0.
-                    } else {
-                        downloaded as f32 / total as f32 * 100.
-                    };
-                    // Avg Speed: 1.00 chunks/s or 5.02x | ETA: 6m 37s
-                    tracing::info!(
-                        "Processing {filename} finished. ({downloaded} / {total} or {percentage:.2}%)"
-                    );
+                    app.on_downloaded_segment(&segment_info).await;
 
                     _ = merger.lock().await.update(segment_info, cache).await;
 
@@ -231,13 +196,7 @@ where
             .await
             .unwrap();
 
-        let failed = self.failed_segments_name.lock().await;
-        if !failed.is_empty() {
-            tracing::error!("Failed to download {} segments:", failed.len());
-            for segment in failed.iter() {
-                tracing::error!("  - {}", segment);
-            }
-        }
+        self.app.on_finished().await?;
 
         self.merger.lock().await.finish(self.cache).await
     }
@@ -251,20 +210,22 @@ fn assert_send<'a, T>(
     fut
 }
 
-pub struct ParallelDownloaderBuilder<M, C, MR = ()> {
+pub struct ParallelDownloaderBuilder<M, C, MR, A> {
     concurrency: NonZeroU32,
     retries: u32,
     merger: Option<M>,
     cache: Option<C>,
     stop_signal: Option<oneshot::Receiver<()>>,
+    app: Option<A>,
 
     _merge_result: std::marker::PhantomData<MR>,
 }
 
-impl<M, C, MR> ParallelDownloaderBuilder<M, C, MR>
+impl<M, C, MR, A> ParallelDownloaderBuilder<M, C, MR, A>
 where
     M: Merger<Result = MR> + Send + Sync + 'static,
     C: CacheSource,
+    A: DownloaderApp + Send + Sync + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -273,6 +234,7 @@ where
             merger: None,
             cache: None,
             stop_signal: None,
+            app: None,
             _merge_result: Default::default(),
         }
     }
@@ -307,11 +269,27 @@ where
         self
     }
 
-    fn build<S>(self, source: S) -> ParallelDownloader<S, M, C>
+    pub fn app<AA>(self, app: AA) -> ParallelDownloaderBuilder<M, C, MR, AA>
+    where
+        AA: DownloaderApp + Send + Sync + 'static,
+    {
+        ParallelDownloaderBuilder::<M, C, MR, AA> {
+            app: Some(app),
+            concurrency: self.concurrency,
+            retries: self.retries,
+            merger: self.merger,
+            cache: self.cache,
+            stop_signal: self.stop_signal,
+            _merge_result: std::marker::PhantomData,
+        }
+    }
+
+    fn build<S>(self, source: S) -> ParallelDownloader<S, M, C, A>
     where
         S: StreamingSource + Send + Sync + 'static,
     {
         ParallelDownloader::new(
+            self.app.expect("App is not set"),
             source,
             self.merger.expect("Merger is not set"),
             self.cache.expect("Cache is not set"),
@@ -330,10 +308,11 @@ where
     }
 }
 
-impl<M, C, MR> Default for ParallelDownloaderBuilder<M, C, MR>
+impl<M, C, MR, A> Default for ParallelDownloaderBuilder<M, C, MR, A>
 where
     M: Merger<Result = MR> + Send + Sync + 'static,
     C: CacheSource,
+    A: DownloaderApp + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()

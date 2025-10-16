@@ -14,7 +14,7 @@ use iori::{
         opendal::{Operator, services},
     },
     dash::live::CommonDashLiveSource,
-    download::{ParallelDownloader, spawn_ctrlc_handler},
+    download::{ParallelDownloader, TracingApp, spawn_ctrlc_handler},
     hls::HlsLiveSource,
     merge::IoriMerger,
     raw::{HttpFileSource, RawDataSource},
@@ -89,6 +89,7 @@ where
         };
 
         let downloader = ParallelDownloader::builder()
+            .app(TracingApp::new(self.download.concurrency))
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)

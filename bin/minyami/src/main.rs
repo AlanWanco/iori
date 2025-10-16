@@ -14,7 +14,7 @@ use iori::{
     HttpClient, StreamingSource,
     cache::IoriCache,
     dash::archive::CommonDashArchiveSource,
-    download::ParallelDownloader,
+    download::{ParallelDownloader, TracingApp},
     hls::{CommonM3u8ArchiveSource, HlsLiveSource, SegmentRange},
     merge::IoriMerger,
 };
@@ -274,6 +274,7 @@ impl MinyamiArgs {
         S: StreamingSource + Send + Sync + 'static,
     {
         ParallelDownloader::builder()
+            .app(TracingApp::new(self.threads))
             .cache(cache)
             .merger(self.merger())
             .concurrency(self.threads)
