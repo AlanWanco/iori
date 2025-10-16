@@ -3640,6 +3640,7 @@ dependencies = [
  "self_update",
  "serde",
  "shiori-plugin",
+ "shiori-plugin-niconico",
  "shiori-plugin-sheeta",
  "shiori-plugin-showroom",
  "shlex",
@@ -3658,6 +3659,26 @@ dependencies = [
  "iori",
  "regex",
  "serde",
+]
+
+[[package]]
+name = "shiori-plugin-example"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "shiori-plugin",
+]
+
+[[package]]
+name = "shiori-plugin-niconico"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iori-nicolive",
+ "shiori-plugin",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

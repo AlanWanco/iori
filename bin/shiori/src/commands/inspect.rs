@@ -5,8 +5,8 @@ use crate::inspect::{
 use clap::Parser;
 use clap_handler::handler;
 use iori_gigafile::GigafilePlugin;
-use iori_nicolive::inspect::NicoPlugin;
 use shiori_plugin::{InspectorArguments, InspectorCommand};
+use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
 
@@ -27,7 +27,7 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
     inspector
         .add(ShortLinkPlugin)
         .add(ShowroomPlugin)
-        .add(NicoPlugin)
+        .add(NiconicoPlugin)
         .add(SheetaPlugin)
         .add(GigafilePlugin)
         .add(HlsPlugin)

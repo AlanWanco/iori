@@ -127,7 +127,7 @@ impl WatchClient {
         Ok(())
     }
 
-    pub(crate) async fn keep_seat(&self) -> anyhow::Result<()> {
+    pub async fn keep_seat(&self) -> anyhow::Result<()> {
         let mut interval = self.keep_seat_interval.lock().await;
         if interval.is_none() {
             return Ok(());

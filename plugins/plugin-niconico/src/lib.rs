@@ -3,16 +3,16 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use shiori_plugin::*;
 
-use crate::{
+use iori_nicolive::{
     danmaku::{DanmakuClient, DanmakuList},
     model::{WatchMessageMessageServer, WatchMessageStream, WatchResponse},
     program::{NicoEmbeddedData, NivoServerResponse},
     watch::WatchClient,
 };
 
-pub struct NicoPlugin;
+pub struct NiconicoPlugin;
 
-impl ShioriPlugin for NicoPlugin {
+impl ShioriPlugin for NiconicoPlugin {
     fn name(&self) -> Cow<'static, str> {
         "niconico".into()
     }
@@ -97,7 +97,7 @@ impl Inspect for NicoLiveInspector {
     async fn inspect(
         &self,
         url: &str,
-        _captures: &regex::Captures,
+        _captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let user_session = args.get_string("nico-user-session");
@@ -146,12 +146,12 @@ impl Inspect for NicoLiveInspector {
                 tokio::select! {
                     msg = watcher.recv() => {
                         if let Err(e) = msg {
-                            log::error!("{e:?}");
+                            tracing::error!("{e:?}");
                             if let Err(e) = watcher
                                 .reconnect(&wss_url, &best_quality, chase_play)
                                 .await
                             {
-                                log::error!("Failed to reconnect: {e:?}");
+                                tracing::error!("Failed to reconnect: {e:?}");
                                 break;
                             }
                         }
@@ -159,7 +159,7 @@ impl Inspect for NicoLiveInspector {
                     _ = watcher.keep_seat() => (),
                 }
             }
-            log::info!("watcher disconnected");
+            tracing::info!("watcher disconnected");
         });
 
         let mut result = vec![];
@@ -207,7 +207,7 @@ impl Inspect for NicoVideoInspector {
     async fn inspect(
         &self,
         url: &str,
-        _captures: &regex::Captures,
+        _captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let user_session = args.get_string("nico-user-session");
