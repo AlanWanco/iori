@@ -178,8 +178,8 @@ impl HttpOptions {
         for header in &self.headers {
             let (key, value) = header.split_once(':').expect("Invalid header");
             headers.insert(
-                HeaderName::from_str(key).expect("Invalid header name"),
-                HeaderValue::from_str(value).expect("Invalid header value"),
+                HeaderName::from_str(key.trim()).expect("Invalid header name"),
+                HeaderValue::from_str(value.trim()).expect("Invalid header value"),
             );
         }
 
