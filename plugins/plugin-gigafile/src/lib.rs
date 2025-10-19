@@ -1,11 +1,10 @@
 use fake_user_agent::get_chrome_rua;
-use reqwest::{
+use iori_gigafile::GigafileClient;
+use shiori_plugin::iori::reqwest::{
     Client,
     header::{CONTENT_DISPOSITION, COOKIE, USER_AGENT},
 };
 use shiori_plugin::*;
-
-use crate::client::GigafileClient;
 
 pub struct GigafilePlugin;
 
@@ -44,7 +43,7 @@ impl Inspect for GigafileInspector {
     async fn inspect(
         &self,
         url: &str,
-        _captures: &regex::Captures,
+        _captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let key = args.get_string("giga-key");

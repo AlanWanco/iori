@@ -15,6 +15,7 @@ iori-gigafile.workspace = true
 shiori-plugin-showroom.workspace = true
 shiori-plugin-sheeta.workspace = true
 shiori-plugin-niconico.workspace = true
+shiori-plugin-gigafile.workspace = true
 uri-match.workspace = true
 
 tokio = { workspace = true, features = ["full"] }

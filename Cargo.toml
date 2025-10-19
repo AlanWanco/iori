@@ -21,6 +21,7 @@ shiori-plugin = { path = "plugins/plugin" }
 shiori-plugin-showroom = { path = "plugins/plugin-showroom" }
 shiori-plugin-sheeta = { path = "plugins/plugin-sheeta" }
 shiori-plugin-niconico = { path = "plugins/plugin-niconico" }
+shiori-plugin-gigafile = { path = "plugins/plugin-gigafile" }
 
 uri-match = { path = "crates/uri-match" }
 

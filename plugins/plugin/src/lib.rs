@@ -4,8 +4,10 @@ pub use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use anyhow::anyhow;
-pub use iori;
 pub use regex::{Captures, Regex};
+
+pub use iori;
+pub use regex;
 
 pub trait ShioriPlugin {
     /// Name of the plugin

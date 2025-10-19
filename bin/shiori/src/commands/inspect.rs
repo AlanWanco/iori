@@ -4,8 +4,8 @@ use crate::inspect::{
 };
 use clap::Parser;
 use clap_handler::handler;
-use iori_gigafile::GigafilePlugin;
 use shiori_plugin::{InspectorArguments, InspectorCommand};
+use shiori_plugin_gigafile::GigafilePlugin;
 use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
