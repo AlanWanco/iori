@@ -4,7 +4,7 @@ use crate::{
 };
 use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct M3u8Segment {
     pub url: reqwest::Url,
     pub filename: String,

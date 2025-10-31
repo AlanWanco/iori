@@ -8,6 +8,9 @@ use crate::{IoriResult, StreamingSegment, StreamingSource};
 mod http;
 pub use http::*;
 
+mod segments;
+pub use segments::*;
+
 pub struct RawDataSource {
     data: String,
     ext: String,

@@ -17,7 +17,7 @@ use iori::{
     download::{ParallelDownloader, TracingApp, spawn_ctrlc_handler},
     hls::HlsLiveSource,
     merge::IoriMerger,
-    raw::{HttpFileSource, RawDataSource},
+    raw::{HttpFileSource, RawDataSource, RawRemoteSegmentsSource},
     utils::{DuplicateOutputFileNamer, detect_manifest_type},
 };
 use reqwest::{
@@ -130,6 +130,10 @@ where
                     let source = RawDataSource::new(self.url, ext);
                     downloader.download(source).await?;
                 }
+            }
+            PlaylistType::RawRemoteSegments(segments) => {
+                let source = RawRemoteSegmentsSource::new(client.clone(), segments);
+                downloader.download(source).await?;
             }
         }
 
