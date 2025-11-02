@@ -1,0 +1,25 @@
+[package]
+name = "iori-radiko"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+chrono.workspace = true
+fake_user_agent.workspace = true
+quick-xml = { version = "0.37.2", features = ["serialize"] }
+rand.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url = { version = "2.5", features = ["serde"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+

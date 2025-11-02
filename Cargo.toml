@@ -16,12 +16,14 @@ iori-nicolive = { path = "platforms/nicolive" }
 iori-showroom = { path = "platforms/showroom" }
 iori-gigafile = { path = "platforms/gigafile" }
 iori-sheeta = { path = "platforms/sheeta" }
+iori-radiko = { path = "platforms/radiko" }
 
 shiori-plugin = { path = "plugins/plugin" }
 shiori-plugin-showroom = { path = "plugins/plugin-showroom" }
 shiori-plugin-sheeta = { path = "plugins/plugin-sheeta" }
 shiori-plugin-niconico = { path = "plugins/plugin-niconico" }
 shiori-plugin-gigafile = { path = "plugins/plugin-gigafile" }
+shiori-plugin-radiko = { path = "plugins/plugin-radiko" }
 
 uri-match = { path = "crates/uri-match" }
 

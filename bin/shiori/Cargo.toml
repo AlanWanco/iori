@@ -12,10 +12,12 @@ iori = { workspace = true, features = ["opendal-fs"] }
 iori-nicolive.workspace = true
 iori-showroom.workspace = true
 iori-gigafile.workspace = true
+iori-radiko.workspace = true
 shiori-plugin-showroom.workspace = true
 shiori-plugin-sheeta.workspace = true
 shiori-plugin-niconico.workspace = true
 shiori-plugin-gigafile.workspace = true
+shiori-plugin-radiko.workspace = true
 uri-match.workspace = true
 
 tokio = { workspace = true, features = ["full"] }

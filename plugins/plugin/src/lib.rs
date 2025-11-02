@@ -1,6 +1,7 @@
 pub use std::borrow::Cow;
 
 pub use async_trait::async_trait;
+use iori::raw::RawRemoteSegment;
 use serde::{Deserialize, Serialize};
 
 pub use anyhow::anyhow;
@@ -227,6 +228,8 @@ pub enum PlaylistType {
     DASH,
     /// Raw data
     Raw(String),
+    /// Raw remote segments
+    RawRemoteSegments(Vec<RawRemoteSegment>),
     /// Unknown playlist type
     #[default]
     Unknown,

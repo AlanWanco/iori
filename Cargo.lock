@@ -2066,6 +2066,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "iori-radiko"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "fake_user_agent",
+ "quick-xml",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.11",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "iori-sheeta"
 version = "0.1.0"
 dependencies = [
@@ -3629,6 +3648,7 @@ dependencies = [
  "iori",
  "iori-gigafile",
  "iori-nicolive",
+ "iori-radiko",
  "iori-showroom",
  "log",
  "rand 0.9.0",
@@ -3642,6 +3662,7 @@ dependencies = [
  "shiori-plugin",
  "shiori-plugin-gigafile",
  "shiori-plugin-niconico",
+ "shiori-plugin-radiko",
  "shiori-plugin-sheeta",
  "shiori-plugin-showroom",
  "shlex",
@@ -3690,6 +3711,15 @@ dependencies = [
  "shiori-plugin",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "shiori-plugin-radiko"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "iori-radiko",
+ "shiori-plugin",
 ]
 
 [[package]]

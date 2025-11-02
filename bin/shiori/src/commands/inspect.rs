@@ -7,6 +7,7 @@ use clap_handler::handler;
 use shiori_plugin::{InspectorArguments, InspectorCommand};
 use shiori_plugin_gigafile::GigafilePlugin;
 use shiori_plugin_niconico::NiconicoPlugin;
+use shiori_plugin_radiko::RadikoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
 
@@ -30,6 +31,7 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
         .add(NiconicoPlugin)
         .add(SheetaPlugin)
         .add(GigafilePlugin)
+        .add(RadikoPlugin)
         .add(HlsPlugin)
         .add(DashPlugin);
 
