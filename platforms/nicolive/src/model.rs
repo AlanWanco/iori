@@ -27,6 +27,7 @@ pub enum WatchResponse {
     EventState(WatchMessageEventState),
     Akashic(WatchMessageAkashic),
     Schedule(WatchMessageSchedule),
+    AkashicMessageServer(WatchMessageAkashicMessageServer),
 }
 
 #[derive(Deserialize, Debug)]
@@ -142,6 +143,12 @@ pub struct WatchMessageAkashic {
 pub struct WatchMessageSchedule {
     pub begin: String,
     pub end: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchMessageAkashicMessageServer {
+    pub view_uri: String,
 }
 
 #[derive(Deserialize, Debug)]

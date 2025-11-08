@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Now correct `shaka-packager` command will be used when multiple keys exist.
 - Fixed multiple style problems in generated nico danmaku ass. ([#29](https://github.com/iori-rs/iori/issues/29), [#30](https://github.com/iori-rs/iori/issues/30))
 - Custom header key and value are correctly trimmed now. ([#36](https://github.com/iori-rs/iori/issues/36))
+- Fixed error log when downloading nicolive timeshift.
 
 ## [0.2.6] - 2025-06-21
 

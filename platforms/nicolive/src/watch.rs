@@ -109,6 +109,9 @@ impl WatchClient {
                     WatchResponse::EventState(_) => (), // dismiss event state
                     WatchResponse::Akashic(msg) => return Ok(Some(WatchResponse::Akashic(msg))),
                     WatchResponse::Schedule(_) => (), // dismiss schedule
+                    WatchResponse::AkashicMessageServer(msg) => {
+                        return Ok(Some(WatchResponse::AkashicMessageServer(msg)));
+                    }
                 }
             }
         }
