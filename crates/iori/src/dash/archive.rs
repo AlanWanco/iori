@@ -164,7 +164,7 @@ impl StreamingSource for CommonDashArchiveSource {
                             let initialization = template.resolve(&initialization);
                             let url = merge_baseurls(&base_url, &initialization)?;
                             let bytes = self.client.get(url).send().await?.bytes().await?.to_vec();
-                            InitialSegment::Clear(Arc::new(bytes))
+                            InitialSegment::Encrypted(Arc::new(bytes))
                         } else {
                             InitialSegment::None
                         };
