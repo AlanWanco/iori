@@ -67,12 +67,12 @@ impl FromStr for SegmentFormat {
 #[derive(Clone, Default)]
 pub struct SegmentInfo {
     pub stream_id: u64,
+    pub stream_type: StreamType,
     pub sequence: u64,
     pub file_name: String,
     pub initial_segment: InitialSegment,
     pub key: Option<std::sync::Arc<IoriKey>>,
     pub duration: Option<f32>,
-    pub r#type: SegmentType,
     pub format: SegmentFormat,
 }
 
@@ -88,7 +88,7 @@ where
             initial_segment: segment.initial_segment(),
             key: segment.key(),
             duration: segment.duration(),
-            r#type: segment.r#type(),
+            stream_type: segment.stream_type(),
             format: segment.format(),
         }
     }
@@ -119,8 +119,8 @@ impl StreamingSegment for Box<dyn StreamingSegment + Send + Sync + '_> {
         self.as_ref().duration()
     }
 
-    fn r#type(&self) -> SegmentType {
-        self.as_ref().r#type()
+    fn stream_type(&self) -> StreamType {
+        self.as_ref().stream_type()
     }
 
     fn format(&self) -> SegmentFormat {
@@ -153,8 +153,8 @@ impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
         self.as_ref().duration()
     }
 
-    fn r#type(&self) -> SegmentType {
-        self.as_ref().r#type()
+    fn stream_type(&self) -> StreamType {
+        self.as_ref().stream_type()
     }
 
     fn format(&self) -> SegmentFormat {
@@ -164,7 +164,7 @@ impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
-pub enum SegmentType {
+pub enum StreamType {
     #[default]
     Video,
     Audio,
@@ -172,7 +172,7 @@ pub enum SegmentType {
     Unknown,
 }
 
-impl SegmentType {
+impl StreamType {
     pub fn from_mime_type(mime_type: Option<&str>) -> Self {
         let mime_type = mime_type.unwrap_or("video");
 
@@ -254,17 +254,17 @@ mod tests {
     #[test]
     fn test_segment_type_from_mime_type() {
         assert_eq!(
-            SegmentType::from_mime_type(Some("video/mp4")),
-            SegmentType::Video
+            StreamType::from_mime_type(Some("video/mp4")),
+            StreamType::Video
         );
         assert_eq!(
-            SegmentType::from_mime_type(Some("audio/mp4")),
-            SegmentType::Audio
+            StreamType::from_mime_type(Some("audio/mp4")),
+            StreamType::Audio
         );
         assert_eq!(
-            SegmentType::from_mime_type(Some("text/vtt")),
-            SegmentType::Subtitle
+            StreamType::from_mime_type(Some("text/vtt")),
+            StreamType::Subtitle
         );
-        assert_eq!(SegmentType::from_mime_type(None), SegmentType::Video);
+        assert_eq!(StreamType::from_mime_type(None), StreamType::Video);
     }
 }

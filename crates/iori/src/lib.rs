@@ -68,6 +68,9 @@ pub trait StreamingSegment {
     /// Stream id
     fn stream_id(&self) -> u64;
 
+    /// Stream type
+    fn stream_type(&self) -> StreamType;
+
     /// Sequence ID of the segment, starts from 0
     fn sequence(&self) -> u64;
 
@@ -86,8 +89,6 @@ pub trait StreamingSegment {
     fn duration(&self) -> Option<f32> {
         None
     }
-
-    fn r#type(&self) -> SegmentType;
 
     /// Format hint for the segment
     fn format(&self) -> SegmentFormat;

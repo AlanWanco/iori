@@ -14,7 +14,7 @@ use url::Url;
 use std::sync::Arc;
 
 use crate::{
-    ByteRange, HttpClient, InitialSegment, IoriError, IoriResult, SegmentType,
+    ByteRange, HttpClient, InitialSegment, IoriError, IoriResult, StreamType,
     dash::{
         segment::DashSegment,
         template::{Template, TemplateUrl},
@@ -274,7 +274,7 @@ impl MPDTimeline {
                                     url: segment_url,
                                     filename: segment_filename,
                                     r#type: adaptation_set.content_type.as_ref().map_or_else(
-                                        || SegmentType::from_mime_type(mime_type.as_deref()),
+                                        || StreamType::from_mime_type(mime_type.as_deref()),
                                         |r| r.to_segment_type(),
                                     ),
                                     initial_segment: initial_segment.clone().unwrap(),
@@ -371,7 +371,7 @@ impl MPDTimeline {
                                 url: segment_url,
                                 filename: segment_filename,
                                 r#type: adaptation_set.content_type.as_ref().map_or_else(
-                                    || SegmentType::from_mime_type(mime_type.as_deref()),
+                                    || StreamType::from_mime_type(mime_type.as_deref()),
                                     |r| r.to_segment_type(),
                                 ),
                                 initial_segment: initial_segment.clone().unwrap(),
@@ -440,7 +440,7 @@ impl MPDTimeline {
                                 url: segment.url.clone(),
                                 filename: segment_filename,
                                 r#type: adaptation_set.content_type.as_ref().map_or_else(
-                                    || SegmentType::from_mime_type(mime_type.as_deref()),
+                                    || StreamType::from_mime_type(mime_type.as_deref()),
                                     |r| r.to_segment_type(),
                                 ),
                                 initial_segment: initial_segment.clone(),
@@ -684,12 +684,12 @@ pub enum DashAdaptationSetType {
 }
 
 impl DashAdaptationSetType {
-    fn to_segment_type(&self) -> SegmentType {
+    fn to_segment_type(&self) -> StreamType {
         match self {
-            Self::Text => SegmentType::Subtitle,
-            Self::Audio => SegmentType::Audio,
-            Self::Video => SegmentType::Video,
-            _ => SegmentType::Unknown,
+            Self::Text => StreamType::Subtitle,
+            Self::Audio => StreamType::Audio,
+            Self::Video => StreamType::Video,
+            _ => StreamType::Unknown,
         }
     }
 }

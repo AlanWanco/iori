@@ -1,5 +1,5 @@
 use iori::decrypt::IoriKey;
-use iori::{InitialSegment, SegmentFormat, SegmentType, StreamingSegment};
+use iori::{InitialSegment, SegmentFormat, StreamType, StreamingSegment};
 use std::sync::Arc;
 
 struct TestSegment {
@@ -8,7 +8,7 @@ struct TestSegment {
     file_name: String,
     initial_segment: InitialSegment,
     key: Option<Arc<IoriKey>>,
-    segment_type: SegmentType,
+    stream_type: StreamType,
     format: SegmentFormat,
 }
 
@@ -19,7 +19,7 @@ impl TestSegment {
         file_name: String,
         initial_segment: InitialSegment,
         key: Option<Arc<IoriKey>>,
-        segment_type: SegmentType,
+        stream_type: StreamType,
         format: SegmentFormat,
     ) -> Self {
         Self {
@@ -28,7 +28,7 @@ impl TestSegment {
             file_name,
             initial_segment,
             key,
-            segment_type,
+            stream_type,
             format,
         }
     }
@@ -55,8 +55,8 @@ impl StreamingSegment for TestSegment {
         self.key.clone()
     }
 
-    fn r#type(&self) -> SegmentType {
-        self.segment_type
+    fn stream_type(&self) -> StreamType {
+        self.stream_type
     }
 
     fn format(&self) -> SegmentFormat {
@@ -72,7 +72,7 @@ fn test_streaming_segment_implementation() {
         "test.ts".to_string(),
         InitialSegment::None,
         None,
-        SegmentType::Video,
+        StreamType::Video,
         SegmentFormat::Mpeg2TS,
     );
 
@@ -81,7 +81,7 @@ fn test_streaming_segment_implementation() {
     assert_eq!(segment.file_name(), "test.ts");
     assert!(matches!(segment.initial_segment(), InitialSegment::None));
     assert!(segment.key().is_none());
-    assert_eq!(segment.r#type(), SegmentType::Video);
+    assert_eq!(segment.stream_type(), StreamType::Video);
     assert!(matches!(segment.format(), SegmentFormat::Mpeg2TS));
 }
 
@@ -94,7 +94,7 @@ fn test_streaming_segment_with_initial_segment() {
         "test.ts".to_string(),
         InitialSegment::Clear(Arc::new(initial_data.clone())),
         None,
-        SegmentType::Video,
+        StreamType::Video,
         SegmentFormat::Mpeg2TS,
     );
 
@@ -116,7 +116,7 @@ fn test_streaming_segment_with_key() {
         "test.ts".to_string(),
         InitialSegment::None,
         Some(key.clone()),
-        SegmentType::Video,
+        StreamType::Video,
         SegmentFormat::Mpeg2TS,
     );
 

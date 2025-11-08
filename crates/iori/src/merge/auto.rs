@@ -1,5 +1,5 @@
 use crate::{
-    SegmentFormat, SegmentInfo, SegmentType, cache::CacheSource, error::IoriResult,
+    SegmentFormat, SegmentInfo, StreamType, cache::CacheSource, error::IoriResult,
     util::path::IoriPathExt,
 };
 use std::{
@@ -102,7 +102,7 @@ impl Merger for AutoMerger {
                 matches!(
                     s.format,
                     SegmentFormat::Mpeg2TS | SegmentFormat::Aac | SegmentFormat::Raw(_)
-                ) || matches!(s.r#type, SegmentType::Subtitle)
+                ) || matches!(s.stream_type, StreamType::Subtitle)
             });
             if can_concat {
                 concat_merge(&segments, &cache, &output_path).await?;

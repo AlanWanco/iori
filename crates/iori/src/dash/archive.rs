@@ -11,7 +11,7 @@ use tokio::{io::AsyncWrite, sync::mpsc};
 use url::Url;
 
 use crate::{
-    InitialSegment, SegmentType, StreamingSource, dash::segment::DashSegment, decrypt::IoriKey,
+    InitialSegment, StreamType, StreamingSource, dash::segment::DashSegment, decrypt::IoriKey,
     error::IoriResult, fetch::fetch_segment, util::http::HttpClient,
 };
 
@@ -192,7 +192,7 @@ impl StreamingSource for CommonDashArchiveSource {
                                     let segment = DashSegment {
                                         url,
                                         filename,
-                                        r#type: SegmentType::from_mime_type(mime_type.as_deref()),
+                                        r#type: StreamType::from_mime_type(mime_type.as_deref()),
                                         initial_segment: initial_segment.clone(),
                                         key: self.key.clone(),
                                         sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
@@ -229,7 +229,7 @@ impl StreamingSource for CommonDashArchiveSource {
                                 let segment = DashSegment {
                                     url,
                                     filename,
-                                    r#type: SegmentType::from_mime_type(mime_type.as_deref()),
+                                    r#type: StreamType::from_mime_type(mime_type.as_deref()),
                                     initial_segment: initial_segment.clone(),
                                     key: self.key.clone(),
                                     sequence: self.sequence.fetch_add(1, Ordering::Relaxed),

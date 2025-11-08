@@ -11,7 +11,7 @@ use m3u8_rs::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
 use reqwest::Url;
 
 use crate::{
-    InitialSegment, SegmentFormat, SegmentType,
+    InitialSegment, SegmentFormat, StreamType,
     decrypt::IoriKey,
     error::IoriResult,
     hls::{segment::M3u8Segment, utils::load_m3u8},
@@ -25,15 +25,16 @@ pub struct HlsMediaPlaylistSource {
     /// URL of the media playlist
     url: String,
 
-    /// Stream ID
-    stream_id: u64,
-    /// Sequence number for segments retrived from the playlist
-    sequence: AtomicU64,
-
     /// Override key
     key: Option<String>,
-    /// Override segment type
-    segment_type: Option<SegmentType>,
+
+    /// Stream ID
+    stream_id: u64,
+    /// Override stream type
+    stream_type: Option<StreamType>,
+
+    /// Sequence number for segments retrived from the playlist
+    sequence: AtomicU64,
 
     client: HttpClient,
     initial_playlist: Option<MediaPlaylist>,
@@ -55,7 +56,7 @@ impl HlsMediaPlaylistSource {
         m3u8_url: String,
         initial_playlist: Option<MediaPlaylist>,
         key: Option<&str>,
-        segment_type: Option<SegmentType>,
+        stream_type: Option<StreamType>,
         stream_id: u64,
     ) -> Self {
         Self {
@@ -65,7 +66,7 @@ impl HlsMediaPlaylistSource {
 
             sequence: AtomicU64::new(0),
             client,
-            segment_type,
+            stream_type,
             stream_id,
         }
     }
@@ -170,7 +171,7 @@ impl HlsMediaPlaylistSource {
                     length: Some(r.length),
                 }),
                 duration: segment.duration,
-                segment_type: self.segment_type,
+                stream_type: self.stream_type,
                 format,
             };
             segments.push(m3u8_segment);
@@ -254,7 +255,7 @@ impl HlsPlaylistSource {
                     variant_url.to_string(),
                     None,
                     self.key.as_deref(),
-                    Some(SegmentType::Video),
+                    Some(StreamType::Video),
                     0,
                 ));
 
@@ -290,7 +291,7 @@ impl HlsPlaylistSource {
                             m3u8_url,
                             None,
                             self.key.as_deref(),
-                            Some(SegmentType::Audio),
+                            Some(StreamType::Audio),
                             1,
                         ));
                     }
@@ -306,7 +307,7 @@ impl HlsPlaylistSource {
                             self.url.join(video_url)?.to_string(),
                             None,
                             self.key.as_deref(),
-                            Some(SegmentType::Video),
+                            Some(StreamType::Video),
                             2,
                         ));
                     }
@@ -318,7 +319,7 @@ impl HlsPlaylistSource {
                     self.url.to_string(),
                     Some(pl),
                     self.key.as_deref(),
-                    Some(SegmentType::Video),
+                    Some(StreamType::Video),
                     0,
                 ));
             }

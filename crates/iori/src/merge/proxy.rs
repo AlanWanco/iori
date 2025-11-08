@@ -129,11 +129,11 @@ async fn serve_playlist(State(state): State<AppState>) -> Result<impl IntoRespon
         // Determine stream type and attributes
         let stream_segments = &segments[&stream_id];
         if let Some(first_segment) = stream_segments.values().next() {
-            match first_segment.r#type {
-                crate::SegmentType::Video => {
+            match first_segment.stream_type {
+                crate::StreamType::Video => {
                     master.push_str("#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n");
                 }
-                crate::SegmentType::Audio => {
+                crate::StreamType::Audio => {
                     master.push_str(&format!(
                         r#"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,URI="stream/{}/playlist.m3u8"\n"#,
                         stream_id

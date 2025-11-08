@@ -1,6 +1,6 @@
 use crate::{
-    ByteRange, InitialSegment, RemoteStreamingSegment, SegmentFormat, SegmentType,
-    StreamingSegment, decrypt::IoriKey,
+    ByteRange, InitialSegment, RemoteStreamingSegment, SegmentFormat, StreamType, StreamingSegment,
+    decrypt::IoriKey,
 };
 use std::sync::Arc;
 
@@ -16,12 +16,13 @@ pub struct M3u8Segment {
 
     /// Stream id
     pub stream_id: u64,
+    pub stream_type: Option<StreamType>,
+
     /// Sequence id allocated by the downloader, starts from 0
     pub sequence: u64,
     /// Media sequence id from the m3u8 file
     pub media_sequence: u64,
 
-    pub segment_type: Option<SegmentType>,
     pub duration: f32,
     pub format: SegmentFormat,
 }
@@ -51,8 +52,8 @@ impl StreamingSegment for M3u8Segment {
         Some(self.duration)
     }
 
-    fn r#type(&self) -> SegmentType {
-        self.segment_type.unwrap_or(SegmentType::Video)
+    fn stream_type(&self) -> StreamType {
+        self.stream_type.unwrap_or(StreamType::Video)
     }
 
     fn format(&self) -> SegmentFormat {

@@ -1,6 +1,6 @@
 use super::Merger;
 use crate::{
-    SegmentInfo, SegmentType,
+    SegmentInfo, StreamType,
     cache::CacheSource,
     error::IoriResult,
     util::{ordered_stream::OrderedStream, path::DuplicateOutputFileNamer},
@@ -15,7 +15,7 @@ use tokio::{
 
 type SendSegment = (
     Pin<Box<dyn AsyncRead + Send + 'static>>,
-    SegmentType,
+    StreamType,
     Pin<Box<dyn Future<Output = IoriResult<()>> + Send>>,
 );
 
@@ -210,13 +210,13 @@ impl PipeMerger {
             while let Some((_, segment)) = stream.next().await {
                 if let Some((reader, r#type, invalidate)) = segment {
                     match r#type {
-                        SegmentType::Video => {
+                        StreamType::Video => {
                             video_sender.send((reader, r#type, invalidate)).unwrap();
                         }
-                        SegmentType::Audio => {
+                        StreamType::Audio => {
                             audio_sender.send((reader, r#type, invalidate)).unwrap();
                         }
-                        SegmentType::Subtitle | SegmentType::Unknown => {
+                        StreamType::Subtitle | StreamType::Unknown => {
                             if recycle {
                                 _ = invalidate.await;
                             }
@@ -255,14 +255,14 @@ impl Merger for PipeMerger {
     async fn update(&mut self, segment: SegmentInfo, cache: impl CacheSource) -> IoriResult<()> {
         let stream_id = segment.stream_id;
         let sequence = segment.sequence;
-        let r#type = segment.r#type;
+        let stream_type = segment.stream_type;
         let reader = cache.open_reader(&segment).await?;
         let invalidate = async move { cache.invalidate(&segment).await };
 
         self.send((
             stream_id,
             sequence,
-            Some((Box::pin(reader), r#type, Box::pin(invalidate))),
+            Some((Box::pin(reader), stream_type, Box::pin(invalidate))),
         ));
 
         Ok(())

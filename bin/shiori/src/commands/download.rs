@@ -254,6 +254,9 @@ pub struct CacheOptions {
 
     #[clap(long = "experimental-opendal")]
     pub opendal: bool,
+
+    #[clap(long = "experimental-stream-dir-cache")]
+    pub stream_dir_cache: bool,
 }
 
 impl CacheOptions {
@@ -261,7 +264,11 @@ impl CacheOptions {
         Ok(if self.in_memory_cache {
             IoriCache::memory()
         } else if let Some(cache_dir) = self.cache_dir {
-            IoriCache::file(cache_dir)?
+            if self.stream_dir_cache {
+                IoriCache::stream_dir_file(cache_dir)?
+            } else {
+                IoriCache::file(cache_dir)?
+            }
         } else {
             let mut cache_dir = self
                 .temp_dir
@@ -277,6 +284,8 @@ impl CacheOptions {
                 let builder = services::Fs::default().root(cache_dir);
                 let op = Operator::new(builder)?.finish();
                 IoriCache::opendal(op, "shiori", true, None)
+            } else if self.stream_dir_cache {
+                IoriCache::stream_dir_file(cache_dir)?
             } else {
                 IoriCache::file(cache_dir)?
             }

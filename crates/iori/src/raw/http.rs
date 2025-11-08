@@ -3,7 +3,7 @@ use std::{fmt::Display, sync::Arc};
 use tokio::{io::AsyncWrite, sync::mpsc};
 
 use crate::{
-    HttpClient, IoriResult, SegmentFormat, SegmentType, StreamingSegment, StreamingSource,
+    HttpClient, IoriResult, SegmentFormat, StreamType, StreamingSegment, StreamingSource,
     decrypt::IoriKey,
 };
 
@@ -64,8 +64,8 @@ impl StreamingSegment for HttpSegment {
         None
     }
 
-    fn r#type(&self) -> SegmentType {
-        SegmentType::Video
+    fn stream_type(&self) -> StreamType {
+        StreamType::Video
     }
 
     fn format(&self) -> SegmentFormat {

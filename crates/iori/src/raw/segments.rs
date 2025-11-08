@@ -35,8 +35,8 @@ impl StreamingSegment for RawRemoteSegment {
         None
     }
 
-    fn r#type(&self) -> crate::SegmentType {
-        crate::SegmentType::Subtitle
+    fn stream_type(&self) -> crate::StreamType {
+        crate::StreamType::Subtitle
     }
 
     fn format(&self) -> crate::SegmentFormat {

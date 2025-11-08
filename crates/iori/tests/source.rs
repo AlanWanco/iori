@@ -1,6 +1,6 @@
 use futures::executor::block_on;
 use iori::{
-    InitialSegment, IoriError, IoriResult, SegmentFormat, SegmentType, StreamingSegment,
+    InitialSegment, IoriError, IoriResult, SegmentFormat, StreamType, StreamingSegment,
     StreamingSource,
 };
 use std::sync::Arc;
@@ -55,8 +55,8 @@ impl StreamingSegment for TestSegment {
         None
     }
 
-    fn r#type(&self) -> SegmentType {
-        SegmentType::Video
+    fn stream_type(&self) -> StreamType {
+        StreamType::Video
     }
 
     fn format(&self) -> SegmentFormat {
