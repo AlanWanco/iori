@@ -141,6 +141,11 @@ where
     }
 
     pub async fn run_tui_loop(&self) -> io::Result<()> {
+        // Clear screen when TUI starts
+        let mut stdout = io::stdout();
+        execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+        stdout.flush()?;
+
         let mut last_update = std::time::Instant::now();
 
         loop {
@@ -156,10 +161,7 @@ where
             if !running {
                 // Move cursor down to end of tui
                 let current_line_count = self.get_display_lines(self.streams.lock().await.len());
-                execute!(
-                    stdout(),
-                    cursor::MoveDown(current_line_count as u16) // one more empty line
-                )?;
+                execute!(stdout, cursor::MoveDown(current_line_count as u16))?;
                 break;
             }
 
