@@ -263,6 +263,7 @@ pub struct CacheOptions {
     pub opendal: bool,
 
     #[clap(long = "experimental-stream-dir-cache")]
+    #[clap(about_ll = "download-cache-experimental-stream-dir-cache")]
     pub stream_dir_cache: bool,
 }
 
@@ -355,7 +356,7 @@ pub struct OutputModeOptions {
     pub pipe_mux: bool,
 
     #[clap(long)]
-    #[clap(about_ll = "download-output-proxy")]
+    #[clap(about_ll = "download-output-experimental-proxy")]
     pub proxy: bool,
 }
 

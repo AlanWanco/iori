@@ -1,7 +1,7 @@
 shiori-about = Yet another m3u8 downloader
 
 download-wait = Wait for stream to start when no stream is detected
-download-experimental-ui = Enable experimental TUI when download
+download-experimental-ui = {"["}Experimental] Enable TUI
 download-url = URL to download
 
 download-http-headers = Additional HTTP headers for all HTTP requests, format is key: value
@@ -30,6 +30,10 @@ download-cache-cache-dir =
     Speficy a directory to store cache files.
 
     If specified, the cache will be stored in this directory directly without creating a subdirectory.
+download-cache-experimental-stream-dir-cache =
+  {"["}Experimental] Use new cache directory structure
+  
+  Resume download is supported in this cache source. Make sure to use along with `cache-dir`.
 
 download-output-no-merge = Do not merge stream
 download-output-concat = Merge files using concat
@@ -37,4 +41,5 @@ download-output-output = Output filename
 download-output-pipe = Pipe to stdout
 download-output-pipe-mux = Mux with ffmpeg. Only works when `--pipe` is set.
 download-output-pipe-to = Pipe to a file
+download-output-experimental-proxy = {"["}Experimental] Provide a M3U8 manifest for other clients by starting a local HTTP Server
 download-output-no-recycle = Keep the downloaded segments

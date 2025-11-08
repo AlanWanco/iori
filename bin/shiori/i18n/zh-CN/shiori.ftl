@@ -1,7 +1,7 @@
 shiori-about = 又一个直播下载器
 
 download-wait = 当未检测到直播流时，是否等待直播流开始
-download-experimental-ui = 启用实验性 TUI
+download-experimental-ui = {"["}实验性功能] 启用文本图形界面(TUI)
 download-url = 视频地址
 
 download-http-headers = 设置 HTTP header，格式为 key: value
@@ -29,6 +29,10 @@ download-cache-cache-dir =
 
   存储分块及下载时产生的临时文件的目录。
   文件会直接存储在该目录下，而不会创建子目录。为安全起见，请自行创建子目录。
+download-cache-experimental-stream-dir-cache =
+  {"["}实验性功能] 使用新版缓存目录结构
+  
+  该结构支持断点续传，请搭配 `cache-dir` 使用。
 
 download-output-no-merge = 跳过合并
 download-output-concat = 使用 Concat 合并文件
@@ -36,4 +40,5 @@ download-output-output = 输出文件名
 download-output-pipe = 输出到标准输出
 download-output-pipe-mux = 使用 FFmpeg 混流，仅在 `--pipe` 生效时有效
 download-output-pipe-to = 使用 Pipe 输出到指定路径
+download-output-experimental-proxy = {"["}实验性功能] 启动一个 HTTP Server 并提供 M3U8 给其他客户端使用
 download-output-no-recycle = 保留已下载的分片

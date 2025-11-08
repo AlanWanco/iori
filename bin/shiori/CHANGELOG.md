@@ -5,23 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2025-11-08
 
 ### Features
 
-- Supported download of free programs on sheeta-based platforms (`nicochannel+`, `qlover+`, and auto-detecting other supported sites).
-- Supported radiko live and timeshift download.
-- Supported Niconico (sm-) video download.
+- **New Platform:** Supported download of free programs on sheeta-based platforms (`nicochannel+`, `qlover+`, and auto-detecting other supported sites).
+- **New Platform:** Supported radiko live and timeshift download.
+- **Niconico:** Supported Niconico (sm-) video download.
 - Added `--no-recycle` flag to keep downloaded segment for all cache methods. ([#32](https://github.com/iori-rs/iori/pull/32))
 
 ### Experimental Features
 
 - Added `--experimental-stream-dir-cache` flag to enable the next-gen cache dir structure. Here are some highlights:
   1. It separates folder for different streams so that further process of the raw segments could be simpler.
-  2. It supports resume download with `--cache-dir` specified.
+  2. It supports **resume download** with `--cache-dir` specified.
 - Added `--experimental-ui`(`--tui`) flag to enable the brand new downloading TUI for shiori!
 
 ![](https://github.com/user-attachments/assets/bfd9454a-f809-4a60-b506-e6c8f58eacfc)
+
+### Updated
+
+- Improved file name sanitize on Windows.
+- Improved duplicated output detection.
 
 ### Fixed
 
@@ -184,3 +189,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.4]: https://github.com/Yesterday17/iori/tree/shiori-v0.2.4
 [0.2.5]: https://github.com/Yesterday17/iori/tree/shiori-v0.2.5
 [0.2.6]: https://github.com/Yesterday17/iori/tree/shiori-v0.2.6
+[0.3.0]: https://github.com/Yesterday17/iori/tree/shiori-v0.3.0
