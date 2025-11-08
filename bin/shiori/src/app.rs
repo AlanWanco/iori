@@ -13,7 +13,7 @@ use std::{
     io::{self, IsTerminal, Write, stdout},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -76,6 +76,7 @@ where
     running: Arc<AtomicBool>,
     start_time: Arc<Mutex<Option<Instant>>>,
     last_line_count: Arc<Mutex<usize>>,
+    marquee_offset: Arc<AtomicUsize>,
 
     handle: Arc<Mutex<Option<JoinHandle<io::Result<()>>>>>,
 }
@@ -98,9 +99,36 @@ where
             running: Arc::new(AtomicBool::new(true)),
             start_time: Arc::new(Mutex::new(None)),
             last_line_count: Arc::new(Mutex::new(0)), // Start with 0 for first render
+            marquee_offset: Arc::new(AtomicUsize::new(0)),
 
             handle: Default::default(),
         }
+    }
+
+    fn marquee_text(text: &str, max_width: usize, offset: usize) -> String {
+        let chars: Vec<char> = text.chars().collect();
+        if chars.len() <= max_width {
+            // Text fits, no need to scroll
+            return text.to_string();
+        }
+
+        // Add spacing between end and start for continuous scrolling
+        let spacing = "   ".chars().collect::<Vec<_>>();
+        let mut extended: Vec<char> = chars.clone();
+        extended.extend(&spacing);
+        extended.extend(&chars);
+
+        // Calculate effective offset (loop around)
+        let total_len = chars.len() + spacing.len();
+        let effective_offset = offset % total_len;
+
+        // Extract the visible window
+        extended
+            .iter()
+            .cycle()
+            .skip(effective_offset)
+            .take(max_width)
+            .collect()
     }
 
     async fn set_log(&self, message: impl Into<String>) {
@@ -130,7 +158,7 @@ where
                 let current_line_count = self.get_display_lines(self.streams.lock().await.len());
                 execute!(
                     stdout(),
-                    cursor::MoveDown(current_line_count as u16 + 1) // one more empty line
+                    cursor::MoveDown(current_line_count as u16) // one more empty line
                 )?;
                 break;
             }
@@ -205,7 +233,7 @@ where
             Print("\n")
         )?;
 
-        // Line 1: Output file
+        // Line 1: Output file with marquee effect
         let output_name = self
             .command
             .output
@@ -218,6 +246,12 @@ where
                     .to_string()
             })
             .unwrap_or_else(|| "unknown".to_string());
+
+        // Update marquee offset (scroll every 3 renders)
+        let render_count = self.marquee_offset.fetch_add(1, Ordering::Relaxed);
+        let scroll_offset = render_count / 3;
+        let display_name = Self::marquee_text(&output_name, 50, scroll_offset);
+
         execute!(
             stdout,
             cursor::MoveToColumn(0),
@@ -229,7 +263,7 @@ where
             Print("Output: "),
             SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::Cyan),
-            Print(&output_name.chars().take(50).collect::<String>()),
+            Print(display_name),
             ResetColor,
             Print("\n")
         )?;
