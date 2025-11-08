@@ -1,3 +1,5 @@
+use std::{borrow::Cow, path::PathBuf};
+
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::mpsc,
@@ -17,14 +19,19 @@ pub struct RawDataSource {
 }
 
 impl RawDataSource {
-    pub fn new(data: String, ext: String) -> Self {
+    pub fn new(data: String, url: String) -> Self {
+        let ext = PathBuf::from(url)
+            .extension()
+            .map(|e| e.to_string_lossy())
+            .unwrap_or(Cow::Borrowed("raw"))
+            .to_string();
+
         Self { data, ext }
     }
 }
 
 pub struct RawSegment {
     data: String,
-
     filename: String,
     ext: String,
 }
@@ -33,7 +40,7 @@ impl RawSegment {
     pub fn new(data: String, ext: String) -> Self {
         Self {
             data,
-            filename: format!("01.{ext}"),
+            filename: format!("data.{ext}"),
             ext,
         }
     }
@@ -57,11 +64,11 @@ impl StreamingSegment for RawSegment {
     }
 
     fn stream_type(&self) -> crate::StreamType {
-        crate::StreamType::Subtitle
+        crate::StreamType::Unknown
     }
 
     fn format(&self) -> crate::SegmentFormat {
-        crate::SegmentFormat::Raw(self.ext.clone())
+        crate::SegmentFormat::Raw(Some(self.ext.clone()))
     }
 }
 

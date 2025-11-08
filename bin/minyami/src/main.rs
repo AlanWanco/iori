@@ -274,7 +274,7 @@ impl MinyamiArgs {
         S: StreamingSource + Send + Sync + 'static,
     {
         ParallelDownloader::builder()
-            .app(TracingApp::new(self.threads))
+            .app(TracingApp::concurrent(self.threads))
             .cache(cache)
             .merger(self.merger())
             .concurrency(self.threads)

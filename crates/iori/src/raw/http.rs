@@ -69,7 +69,7 @@ impl StreamingSegment for HttpSegment {
     }
 
     fn format(&self) -> SegmentFormat {
-        SegmentFormat::Raw(self.ext.clone())
+        SegmentFormat::Raw(Some(self.ext.clone()))
     }
 }
 

@@ -19,7 +19,7 @@ pub enum SegmentFormat {
     Cmfv,
     Cmfa,
     Aac,
-    Raw(String),
+    Raw(Option<String>),
     Other(String),
 }
 
@@ -32,7 +32,7 @@ impl SegmentFormat {
             Self::Cmfv => "cmfv",
             Self::Cmfa => "cmfa",
             Self::Aac => "aac",
-            Self::Raw(ext) => ext.as_str(),
+            Self::Raw(ext) => ext.as_deref().unwrap_or("raw"),
             Self::Other(ext) => ext.as_str(),
         }
     }
@@ -50,7 +50,7 @@ impl SegmentFormat {
             "cmfv" => Self::Cmfv,
             "cmfa" => Self::Cmfa,
             "aac" => Self::Aac,
-            "txt" | "ass" | "srt" | "vtt" | "json" => Self::Raw(ext.to_string()),
+            "txt" | "ass" | "srt" | "vtt" | "json" => Self::Raw(Some(ext.to_string())),
             _ => Self::Other(ext.to_string()),
         }
     }
@@ -229,7 +229,7 @@ mod tests {
         );
         assert_eq!(
             SegmentFormat::from_filename("test.txt"),
-            SegmentFormat::Raw("txt".to_string())
+            SegmentFormat::Raw(Some("txt".to_string()))
         );
         assert_eq!(
             SegmentFormat::from_filename("test.unknown"),
@@ -244,7 +244,8 @@ mod tests {
         assert_eq!(SegmentFormat::M4a.as_ext(), "m4a");
         assert_eq!(SegmentFormat::Cmfv.as_ext(), "cmfv");
         assert_eq!(SegmentFormat::Cmfa.as_ext(), "cmfa");
-        assert_eq!(SegmentFormat::Raw("txt".to_string()).as_ext(), "txt");
+        assert_eq!(SegmentFormat::Raw(None).as_ext(), "raw");
+        assert_eq!(SegmentFormat::Raw(Some("txt".to_string())).as_ext(), "txt");
         assert_eq!(
             SegmentFormat::Other("unknown".to_string()).as_ext(),
             "unknown"

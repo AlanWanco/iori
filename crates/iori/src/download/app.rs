@@ -35,8 +35,9 @@ impl DownloaderApp for () {
     }
 }
 
+#[derive(Default)]
 pub struct TracingApp {
-    concurrency: NonZeroU32,
+    concurrency: Option<NonZeroU32>,
 
     total: AtomicUsize,
     downloaded: AtomicUsize,
@@ -45,24 +46,21 @@ pub struct TracingApp {
 }
 
 impl TracingApp {
-    pub fn new(concurrency: NonZeroU32) -> Self {
+    pub fn concurrent(concurrency: NonZeroU32) -> Self {
         Self {
-            concurrency,
-
-            total: AtomicUsize::new(0),
-            downloaded: AtomicUsize::new(0),
-            failed: AtomicUsize::new(0),
-            failed_segments_name: Mutex::new(Vec::new()),
+            concurrency: Some(concurrency),
+            ..Default::default()
         }
     }
 }
 
 impl DownloaderApp for TracingApp {
     async fn on_start(&self) -> IoriResult<()> {
-        tracing::info!(
-            "Start downloading with {} thread(s).",
-            self.concurrency.get()
-        );
+        if let Some(concurrency) = self.concurrency {
+            tracing::info!("Start downloading with {} thread(s).", concurrency.get());
+        } else {
+            tracing::info!("Start downloading.");
+        }
         Ok(())
     }
 

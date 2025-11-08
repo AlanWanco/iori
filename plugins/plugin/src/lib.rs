@@ -227,7 +227,9 @@ pub enum PlaylistType {
     /// Dynamic Adaptive Streaming over HTTP
     DASH,
     /// Raw data
-    Raw(String),
+    RawData,
+    /// Raw remote file
+    Http,
     /// Raw remote segments
     RawRemoteSegments(Vec<RawRemoteSegment>),
     /// Unknown playlist type

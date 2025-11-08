@@ -71,19 +71,10 @@ impl Inspect for GigafileInspector {
         });
         drop(response);
 
-        let filename = filename.map(|f| {
-            let (name, ext) = f.rsplit_once('.').unwrap_or((&f, "raw"));
-            (name.to_string(), ext.to_string())
-        });
-        let (title, ext) = match filename {
-            Some((filename, ext)) => (Some(filename), ext),
-            None => (None, "raw".to_string()),
-        };
-
         Ok(InspectResult::Playlist(InspectPlaylist {
-            title,
+            title: filename,
             playlist_url: url,
-            playlist_type: PlaylistType::Raw(ext),
+            playlist_type: PlaylistType::Http,
             headers: vec![format!("Cookie: {cookie}")],
             ..Default::default()
         }))

@@ -89,7 +89,7 @@ where
         };
 
         let downloader = ParallelDownloader::builder()
-            .app(TracingApp::new(self.download.concurrency))
+            .app(TracingApp::concurrent(self.download.concurrency))
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
@@ -122,14 +122,15 @@ where
                 )?;
                 downloader.download(source).await?;
             }
-            PlaylistType::Raw(ext) => {
-                if self.url.starts_with("http") {
-                    let source = HttpFileSource::new(client, self.url, ext);
-                    downloader.download(source).await?;
-                } else {
-                    let source = RawDataSource::new(self.url, ext);
+            PlaylistType::RawData => {
+                if let Some(initial_playlist_data) = self.extra.initial_playlist_data {
+                    let source = RawDataSource::new(initial_playlist_data, self.url.clone());
                     downloader.download(source).await?;
                 }
+            }
+            PlaylistType::Http => {
+                let source = HttpFileSource::new(client, self.url, "raw".to_string());
+                downloader.download(source).await?;
             }
             PlaylistType::RawRemoteSegments(segments) => {
                 let source = RawRemoteSegmentsSource::new(client.clone(), segments);
@@ -150,7 +151,7 @@ where
         if self.output.output.is_none() {
             self.output.output = from.output.output;
         }
-        self.extra.playlist_type = from.extra.playlist_type;
+        self.extra = from.extra;
 
         self
     }
@@ -306,6 +307,7 @@ pub struct DecryptOptions {
 pub struct ExtraOptions {
     /// Force Dash mode
     pub playlist_type: Option<PlaylistType>,
+    pub initial_playlist_data: Option<String>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -441,8 +443,15 @@ where
                 key: data.key,
                 ..Default::default()
             },
+            cache: CacheOptions {
+                // Enable in-memory cache if the playlist is raw and has initial playlist data
+                in_memory_cache: matches!(data.playlist_type, PlaylistType::RawData)
+                    && data.initial_playlist_data.is_some(),
+                ..Default::default()
+            },
             extra: ExtraOptions {
                 playlist_type: Some(data.playlist_type),
+                initial_playlist_data: data.initial_playlist_data,
             },
             output: OutputOptions {
                 output: data.title.map(|title| {

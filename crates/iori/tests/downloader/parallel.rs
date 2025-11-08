@@ -1,6 +1,10 @@
 use std::sync::{Arc, atomic::AtomicU8};
 
-use iori::{cache::memory::MemoryCacheSource, download::ParallelDownloader, merge::SkipMerger};
+use iori::{
+    cache::memory::MemoryCacheSource,
+    download::{ParallelDownloader, TracingApp},
+    merge::SkipMerger,
+};
 
 use crate::source::{TestSegment, TestSource};
 
@@ -16,6 +20,7 @@ async fn test_parallel_downloader_with_failed_retry() -> anyhow::Result<()> {
     let cache = Arc::new(MemoryCacheSource::new());
 
     ParallelDownloader::builder()
+        .app(TracingApp::default())
         .merger(SkipMerger)
         .cache(cache.clone())
         .retries(1)
@@ -42,6 +47,7 @@ async fn test_parallel_downloader_with_success_retry() -> anyhow::Result<()> {
     let cache = Arc::new(MemoryCacheSource::new());
 
     ParallelDownloader::builder()
+        .app(TracingApp::default())
         .merger(SkipMerger)
         .cache(cache.clone())
         .retries(3)

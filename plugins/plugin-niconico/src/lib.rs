@@ -180,14 +180,16 @@ impl Inspect for NicoLiveInspector {
                 .await?;
             result.push(InspectPlaylist {
                 title: Some(data.program_title()),
-                playlist_url: danmaku.to_json(true)?,
-                playlist_type: PlaylistType::Raw("json".to_string()),
+                playlist_url: "danmaku.json".to_string(),
+                playlist_type: PlaylistType::RawData,
+                initial_playlist_data: Some(danmaku.to_json(true)?),
                 ..Default::default()
             });
             result.push(InspectPlaylist {
                 title: Some(data.program_title()),
-                playlist_url: danmaku.to_ass()?,
-                playlist_type: PlaylistType::Raw("ass".to_string()),
+                playlist_url: "danmaku.ass".to_string(),
+                playlist_type: PlaylistType::RawData,
+                initial_playlist_data: Some(danmaku.to_ass()?),
                 ..Default::default()
             });
         }

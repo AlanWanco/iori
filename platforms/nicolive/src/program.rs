@@ -348,8 +348,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_playlist() -> anyhow::Result<()> {
+        // 【Hatsune Miku】 livetune (kz) - Tell Your World - Full size Ver. 【Sound Radio】
         let data =
-            NivoServerResponse::new("https://www.nicovideo.jp/watch/so45023417", None).await?;
+            NivoServerResponse::new("https://www.nicovideo.jp/watch/sm16550626", None).await?;
         println!("{:?}", data.playlist_url().await?);
         Ok(())
     }
