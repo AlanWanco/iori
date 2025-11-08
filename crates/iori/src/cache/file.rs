@@ -1,5 +1,5 @@
 use super::{CacheSource, CacheSourceReader, CacheSourceWriter};
-use crate::{IoriError, error::IoriResult};
+use crate::{IoriError, error::IoriResult, util::path::IoriPathExt};
 use std::path::PathBuf;
 use tokio::fs::File;
 
@@ -41,11 +41,7 @@ impl CacheSource for FileCacheSource {
         self.ensure_cache_dir().await?;
 
         let path = self.segment_path(segment);
-        if path
-            .metadata()
-            .map(|p| p.is_file() && p.len() > 0)
-            .unwrap_or_default()
-        {
+        if path.non_empty_file_exists() {
             tracing::warn!("File {} already exists, ignoring.", path.display());
             return Ok(None);
         }

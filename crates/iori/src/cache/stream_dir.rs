@@ -107,7 +107,7 @@ impl CacheSource for StreamDirCacheSource {
         }
 
         let path = self.segment_path(stream_dir, segment);
-        if path.file_exists() {
+        if path.non_empty_file_exists() {
             tracing::warn!(
                 stream_id = segment.stream_id,
                 sequence = segment.sequence,

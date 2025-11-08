@@ -64,7 +64,7 @@ pub trait IoriPathExt {
 
     fn with_replaced_extension(&self, new_extension: &str, replace_list: &[&str]) -> PathBuf;
 
-    fn file_exists(&self) -> bool;
+    fn non_empty_file_exists(&self) -> bool;
 }
 
 impl IoriPathExt for PathBuf {
@@ -116,8 +116,10 @@ impl IoriPathExt for PathBuf {
     }
 
     /// The path is file and it exists
-    fn file_exists(&self) -> bool {
-        self.metadata().map(|m| m.is_file()).unwrap_or(false)
+    fn non_empty_file_exists(&self) -> bool {
+        self.metadata()
+            .map(|m| m.is_file() && m.len() > 0)
+            .unwrap_or(false)
     }
 }
 
