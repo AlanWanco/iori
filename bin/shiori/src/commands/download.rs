@@ -93,7 +93,7 @@ where
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
-            .merger(self.output.into_merger())
+            .merger(self.output.into_merger()?)
             .stop_signal(stop_signal);
 
         match playlist_type {
@@ -354,8 +354,8 @@ pub struct OutputModeOptions {
 }
 
 impl OutputOptions {
-    pub fn into_merger(self) -> IoriMerger {
-        if self.output_mode.no_merge {
+    pub fn into_merger(self) -> anyhow::Result<IoriMerger> {
+        Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
         } else if self.output_mode.proxy {
             let addr: std::net::SocketAddr =
@@ -386,8 +386,8 @@ impl OutputOptions {
                 IoriMerger::auto(output, self.recycle)
             }
         } else {
-            unreachable!("Output file must be specified unless --pipe or --no-merge is used")
-        }
+            anyhow::bail!("Output file must be specified unless --pipe or --no-merge is used");
+        })
     }
 }
 
