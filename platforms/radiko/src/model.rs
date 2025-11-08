@@ -106,8 +106,7 @@ pub struct ProgrammeItem {
     pub title: String,
     pub ft: String,
     pub to: String,
-    #[serde(default)]
-    pub dur: String,
+    pub dur: Option<u64>,
     #[serde(default)]
     pub performer: Option<String>,
     #[serde(default)]

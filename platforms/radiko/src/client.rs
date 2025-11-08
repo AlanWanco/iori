@@ -22,6 +22,7 @@ impl RadikoClient {
         Self {
             client: Client::builder()
                 .user_agent(fake_user_agent::get_chrome_rua())
+                .danger_accept_invalid_certs(true)
                 .build()
                 .unwrap(),
             device: generate_device_info(),
@@ -242,7 +243,7 @@ impl RadikoClient {
                     title: prog.title,
                     start_time: prog.ft.clone(),
                     end_time: prog.to.clone(),
-                    duration: prog.dur.parse().unwrap_or(0),
+                    duration: prog.dur.unwrap_or(0),
                     ft: prog.ft,
                     to: prog.to,
                     performer: prog.performer,
