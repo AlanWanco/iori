@@ -3,7 +3,7 @@ use std::time::Duration;
 use iori_radiko::{RadikoClient, RadikoTime};
 use shiori_plugin::{
     iori::{
-        HttpClient,
+        HttpClient, StreamType,
         hls::HlsPlaylistSource,
         raw::RawRemoteSegment,
         reqwest::{Client, header::HeaderMap},
@@ -185,6 +185,7 @@ impl Inspect for RadikoTimefreeInspector {
                     range: None,
                     stream_id: segment.stream_id,
                     sequence: index,
+                    stream_type: StreamType::Audio,
                 });
                 index += 1;
             }

@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{ByteRange, HttpClient, IoriResult, StreamingSegment, decrypt::IoriKey};
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -162,7 +164,7 @@ impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum StreamType {
     #[default]

@@ -3,8 +3,8 @@ use std::sync::Mutex;
 use tokio::{io::AsyncWrite, sync::mpsc};
 
 use crate::{
-    ByteRange, HttpClient, IoriResult, RemoteStreamingSegment, StreamingSegment, StreamingSource,
-    fetch::fetch_segment,
+    ByteRange, HttpClient, IoriResult, RemoteStreamingSegment, StreamType, StreamingSegment,
+    StreamingSource, fetch::fetch_segment,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -15,6 +15,7 @@ pub struct RawRemoteSegment {
 
     pub stream_id: u64,
     pub sequence: u64,
+    pub stream_type: StreamType,
 }
 
 impl StreamingSegment for RawRemoteSegment {
@@ -36,7 +37,7 @@ impl StreamingSegment for RawRemoteSegment {
     }
 
     fn stream_type(&self) -> crate::StreamType {
-        crate::StreamType::Subtitle
+        self.stream_type
     }
 
     fn format(&self) -> crate::SegmentFormat {
