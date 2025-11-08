@@ -223,7 +223,7 @@ mod tests {
         // Test file name normalization with slashes
         let segment = create_test_segment(1, StreamType::Video, 123, "another/file.ts");
         let path = cache.segment_path(&stream_dir, &segment);
-        assert_eq!(path, stream_dir.join("000123_another__file.ts"));
+        assert_eq!(path, stream_dir.join("000123_another_file.ts"));
     }
 
     #[test]
@@ -494,10 +494,10 @@ mod tests {
         // Test various filename patterns that need normalization
         let test_cases = vec![
             ("simple.ts", "000001_simple.ts"),
-            ("path/to/file.ts", "000001_path__to__file.ts"),
+            ("path/to/file.ts", "000001_path_to_file.ts"),
             (
                 "nested/deep/path/file.ts",
-                "000001_nested__deep__path__file.ts",
+                "000001_nested_deep_path_file.ts",
             ),
         ];
 
