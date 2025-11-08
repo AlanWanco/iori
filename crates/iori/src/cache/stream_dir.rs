@@ -8,6 +8,11 @@ use crate::{
     util::path::IoriPathExt,
 };
 
+const IGNORED_FILES: [&str; 2] = [
+    ".directory", // KDE Dolphin
+    ".DS_Store",  // macOS
+];
+
 /// [StreamDirCacheSource] is a cache source that stores the downloaded but not merged segments in a stream directory.
 ///
 /// The cache directory is organized as follows:
@@ -32,9 +37,34 @@ pub struct StreamDirCacheSource {
 }
 
 impl StreamDirCacheSource {
+    fn is_existing_stream_cache_dir(path: &Path) -> IoriResult<bool> {
+        let mut streams_dir_exists = false;
+
+        // Check if there are any files other than the `streams` directory
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if IGNORED_FILES.contains(&&*name) {
+                continue;
+            }
+            if name == "streams" {
+                streams_dir_exists = true;
+                continue;
+            }
+
+            // For other files, return false
+            return Ok(false);
+        }
+
+        if !streams_dir_exists {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
     pub fn new(cache_dir: PathBuf) -> IoriResult<Self> {
-        // TODO: support resume download
-        if cache_dir.exists() {
+        if cache_dir.exists() && !Self::is_existing_stream_cache_dir(&cache_dir)? {
             return Err(IoriError::CacheDirExists(cache_dir));
         }
 
@@ -50,7 +80,7 @@ impl StreamDirCacheSource {
         };
         self.cache_dir
             .join("streams")
-            .join(format!("{stream_type}_{stream_id}"))
+            .join(format!("{stream_id:02}_{stream_type}"))
     }
 
     fn segment_path<P>(&self, stream_dir: P, segment: &crate::SegmentInfo) -> PathBuf
@@ -120,11 +150,7 @@ impl CacheSource for StreamDirCacheSource {
         }
 
         // Cleanup for .DS_Store files or KDE files
-        const CLEANUP_FILES: [&str; 2] = [
-            ".directory", // KDE Dolphin
-            ".DS_Store",  // macOS
-        ];
-        for file in CLEANUP_FILES.iter() {
+        for file in IGNORED_FILES.iter() {
             let path = self.cache_dir.join(file);
             if path.exists() {
                 tokio::fs::remove_file(path).await?;
@@ -189,7 +215,7 @@ mod tests {
 
         let segment = create_test_segment(0, StreamType::Video, 5, "test.ts");
         let stream_dir = cache.stream_dir(segment.stream_id, segment.stream_type);
-        assert_eq!(stream_dir, cache_dir.join("streams").join("video_0"));
+        assert_eq!(stream_dir, cache_dir.join("streams").join("00_video"));
 
         let path = cache.segment_path(&stream_dir, &segment);
         assert_eq!(path, stream_dir.join("000005_test.ts"));
@@ -210,22 +236,22 @@ mod tests {
         // Test video stream
         let segment = create_test_segment(0, StreamType::Video, 1, "video.ts");
         let stream_dir = cache.stream_dir(segment.stream_id, segment.stream_type);
-        assert_eq!(stream_dir, cache_dir.join("streams").join("video_0"));
+        assert_eq!(stream_dir, cache_dir.join("streams").join("00_video"));
 
         // Test audio stream
         let segment = create_test_segment(1, StreamType::Audio, 1, "audio.m4a");
         let stream_dir = cache.stream_dir(segment.stream_id, segment.stream_type);
-        assert_eq!(stream_dir, cache_dir.join("streams").join("audio_1"));
+        assert_eq!(stream_dir, cache_dir.join("streams").join("01_audio"));
 
         // Test subtitle stream
         let segment = create_test_segment(2, StreamType::Subtitle, 1, "subtitle.vtt");
         let stream_dir = cache.stream_dir(segment.stream_id, segment.stream_type);
-        assert_eq!(stream_dir, cache_dir.join("streams").join("subtitle_2"));
+        assert_eq!(stream_dir, cache_dir.join("streams").join("02_subtitle"));
 
         // Test unknown stream
         let segment = create_test_segment(3, StreamType::Unknown, 1, "unknown.dat");
         let stream_dir = cache.stream_dir(segment.stream_id, segment.stream_type);
-        assert_eq!(stream_dir, cache_dir.join("streams").join("unknown_3"));
+        assert_eq!(stream_dir, cache_dir.join("streams").join("03_unknown"));
     }
 
     #[tokio::test]
@@ -345,7 +371,7 @@ mod tests {
 
         let expected_path = temp_dir
             .join("streams")
-            .join("video_0")
+            .join("00_video")
             .join("000099_test.ts");
         assert_eq!(path, expected_path);
 
