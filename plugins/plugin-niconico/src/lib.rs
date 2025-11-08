@@ -56,7 +56,7 @@ impl ShioriPlugin for NiconicoPlugin {
             PriorityHint::Normal,
         );
         registry.register_inspector(
-            Regex::new(r"https://www\.nicovideo\.jp/watch/so.*").unwrap(),
+            Regex::new(r"https://www\.nicovideo\.jp/watch/(?:so|sm).*").unwrap(),
             Box::new(NicoVideoInspector),
             PriorityHint::Normal,
         );
