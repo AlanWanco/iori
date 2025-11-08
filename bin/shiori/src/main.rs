@@ -1,3 +1,4 @@
+use chrono::Timelike;
 use clap::Parser;
 use clap_handler::Handler;
 use shiori::commands::ShioriArgs;
@@ -9,15 +10,12 @@ struct TimeOnly;
 
 impl FormatTime for TimeOnly {
     fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> fmt::Result {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap();
-        let secs = now.as_secs();
-        let millis = now.subsec_millis();
+        let now = chrono::Local::now();
 
-        let hours = (secs / 3600) % 24;
-        let minutes = (secs / 60) % 60;
-        let seconds = secs % 60;
+        let hours = now.hour();
+        let minutes = now.minute();
+        let seconds = now.second();
+        let millis = now.timestamp_millis() % 1000;
 
         write!(
             w,

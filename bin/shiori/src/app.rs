@@ -2,7 +2,7 @@ use clap::Args;
 use crossterm::{
     cursor, execute,
     style::{Attribute, Color as CColor, Print, ResetColor, SetAttribute, SetForegroundColor},
-    terminal::{Clear, ClearType},
+    terminal::{self, Clear, ClearType},
 };
 use iori::{
     IoriResult, SegmentInfo, StreamType,
@@ -141,23 +141,31 @@ where
     }
 
     pub async fn run_tui_loop(&self) -> io::Result<()> {
-        // Clear screen when TUI starts
         let mut stdout = io::stdout();
-        execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+
+        // Calculate required lines for TUI
+        let required_lines = self.get_display_lines(self.streams.lock().await.len());
+
+        // Get terminal size and cursor position
+        let (_, term_height) = terminal::size()?;
+        let cursor_pos = cursor::position()?;
+        let cursor_row = cursor_pos.1;
+
+        // Calculate remaining height in terminal
+        let remaining_height = term_height.saturating_sub(cursor_row);
+
+        // Only clear screen if remaining height is not enough
+        if remaining_height < required_lines as u16 {
+            execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+        }
+
         stdout.flush()?;
 
-        let mut last_update = std::time::Instant::now();
-
         loop {
-            let running = self.running.load(Ordering::Relaxed);
-
-            // Update display every 100ms
-            if last_update.elapsed() >= Duration::from_millis(100) || !running {
-                self.render_inline().await?;
-                last_update = std::time::Instant::now();
-            }
+            self.render_inline().await?;
 
             // Exit if finished
+            let running = self.running.load(Ordering::Relaxed);
             if !running {
                 // Move cursor down to end of tui
                 let current_line_count = self.get_display_lines(self.streams.lock().await.len());
@@ -165,6 +173,7 @@ where
                 break;
             }
 
+            // Sleep for 50ms
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
@@ -223,12 +232,12 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             SetAttribute(Attribute::Bold),
             Print("╭─ "),
             SetForegroundColor(CColor::Cyan),
             Print("Shiori Downloader "),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("─"),
             SetAttribute(Attribute::Reset),
             ResetColor,
@@ -258,13 +267,13 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("│ "),
-            SetForegroundColor(CColor::White),
+            SetForegroundColor(CColor::Magenta),
             SetAttribute(Attribute::Bold),
             Print("Output: "),
             SetAttribute(Attribute::Reset),
-            SetForegroundColor(CColor::Cyan),
+            SetForegroundColor(CColor::White),
             Print(display_name),
             ResetColor,
             Print("\n")
@@ -292,29 +301,33 @@ where
             } else if stats.failed > 0 {
                 CColor::Yellow
             } else {
-                CColor::Cyan
+                CColor::Magenta
             };
 
             execute!(
                 stdout,
                 cursor::MoveToColumn(0),
                 Clear(ClearType::CurrentLine),
-                SetForegroundColor(CColor::DarkCyan),
+                SetForegroundColor(CColor::Blue),
                 Print("│ "),
-                SetForegroundColor(CColor::White),
+                SetForegroundColor(CColor::Cyan),
                 Print(stream_icon(stats.stream_type)),
                 Print(" "),
-                SetForegroundColor(CColor::DarkGrey),
+                SetForegroundColor(CColor::White),
                 Print(format!("{:8}", stream_name(stats.stream_type))),
                 Print(" "),
                 SetForegroundColor(bar_color),
+                SetAttribute(Attribute::Bold),
                 Print("━".repeat(filled)),
+                SetAttribute(Attribute::Reset),
                 SetForegroundColor(CColor::DarkGrey),
                 SetAttribute(Attribute::Dim),
                 Print("─".repeat(bar_width.saturating_sub(filled))),
                 SetAttribute(Attribute::Reset),
-                SetForegroundColor(CColor::White),
+                SetForegroundColor(CColor::Cyan),
+                SetAttribute(Attribute::Bold),
                 Print(format!(" {:>5.1}%", percentage * 100.0)),
+                SetAttribute(Attribute::Reset),
                 SetForegroundColor(CColor::DarkGrey),
                 Print(format!(
                     " ({}/{})",
@@ -331,12 +344,16 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("│ "),
             SetForegroundColor(CColor::Green),
+            SetAttribute(Attribute::Bold),
             Print("✓ "),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::White),
+            SetAttribute(Attribute::Bold),
             Print(format!("{:>5}", downloaded)),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::DarkGrey),
             Print(" downloaded  "),
             SetForegroundColor(if failed > 0 {
@@ -344,19 +361,34 @@ where
             } else {
                 CColor::DarkGrey
             }),
+            SetAttribute(if failed > 0 {
+                Attribute::Bold
+            } else {
+                Attribute::Reset
+            }),
             Print("✗ "),
             SetForegroundColor(if failed > 0 {
                 CColor::Red
             } else {
                 CColor::DarkGrey
             }),
+            SetAttribute(if failed > 0 {
+                Attribute::Bold
+            } else {
+                Attribute::Reset
+            }),
             Print(format!("{:>5}", failed)),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::DarkGrey),
             Print(" failed  "),
-            SetForegroundColor(CColor::Cyan),
+            SetForegroundColor(CColor::Magenta),
+            SetAttribute(Attribute::Bold),
             Print("∑ "),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::White),
+            SetAttribute(Attribute::Bold),
             Print(format!("{:>5}", total)),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::DarkGrey),
             Print(" total"),
             ResetColor,
@@ -368,21 +400,27 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("│ "),
-            SetForegroundColor(CColor::Magenta),
+            SetForegroundColor(CColor::Yellow),
+            SetAttribute(Attribute::Bold),
             Print("⚡ "),
-            SetForegroundColor(CColor::White),
+            SetAttribute(Attribute::Reset),
+            SetForegroundColor(CColor::Cyan),
+            SetAttribute(Attribute::Bold),
             Print(format!("{:>12}", speed)),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::DarkGrey),
             Print("    "),
-            SetForegroundColor(CColor::Blue),
+            SetForegroundColor(CColor::Cyan),
+            SetAttribute(Attribute::Bold),
             Print("⏱ "),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::White),
             Print(format!("ETA: {}", eta)),
             SetForegroundColor(CColor::DarkGrey),
             Print("    "),
-            SetForegroundColor(CColor::Yellow),
+            SetForegroundColor(CColor::Magenta),
             Print("⚙ "),
             SetForegroundColor(CColor::White),
             Print(format!(
@@ -398,7 +436,7 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("├─"),
             SetAttribute(Attribute::Dim),
             Print("─".repeat(78)),
@@ -416,12 +454,10 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("│ "),
             SetForegroundColor(CColor::Green),
-            SetAttribute(Attribute::Dim),
             Print("⟩ "),
-            SetAttribute(Attribute::Reset),
             SetForegroundColor(CColor::White),
             Print(&recent_text.chars().take(70).collect::<String>()),
             ResetColor,
@@ -434,12 +470,10 @@ where
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("│ "),
             SetForegroundColor(CColor::DarkGrey),
-            SetAttribute(Attribute::Dim),
             Print(&log_text.chars().take(70).collect::<String>()),
-            SetAttribute(Attribute::Reset),
             ResetColor,
             Print("\n")
         )?;
@@ -447,13 +481,13 @@ where
         // Bottom border
         let status_icon = if running { "⏵" } else { "■" };
         let status_text = if running { "Running" } else { "Finished" };
-        let status_color = if running { CColor::Green } else { CColor::Blue };
+        let status_color = if running { CColor::Green } else { CColor::Cyan };
 
         execute!(
             stdout,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print("╰─ "),
             SetForegroundColor(status_color),
             SetAttribute(Attribute::Bold),
@@ -461,7 +495,7 @@ where
             Print(" "),
             Print(status_text),
             SetAttribute(Attribute::Reset),
-            SetForegroundColor(CColor::DarkCyan),
+            SetForegroundColor(CColor::Blue),
             Print(" ─"),
             ResetColor,
             Print("\n")

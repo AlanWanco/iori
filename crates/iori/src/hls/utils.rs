@@ -47,7 +47,7 @@ pub async fn load_m3u8(
     url: Url,
     total_retry: u32,
 ) -> IoriResult<(Url, MediaPlaylist)> {
-    tracing::info!("Start fetching M3U8 file.");
+    tracing::debug!("Start fetching M3U8 file.");
 
     let mut retry = total_retry;
     let m3u8_parsed = loop {
@@ -75,7 +75,7 @@ pub async fn load_m3u8(
             }
         }
     };
-    tracing::info!("M3U8 file fetched.");
+    tracing::debug!("M3U8 file fetched.");
 
     match m3u8_parsed {
         Playlist::MasterPlaylist(pl) => {

@@ -401,6 +401,7 @@ type ShioriDownloadCommand = DownloadCommand<InspectorOptions>;
 
 #[handler(ShioriDownloadCommand)]
 pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> anyhow::Result<()> {
+    tracing::info!("Loading URL: {}", me.url);
     let (_, data) = get_default_external_inspector()
         .wait(me.wait)
         .inspect(&me.url, &me.inspector_options, |c| {
@@ -411,6 +412,7 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
 
     let playlist_downloads: Vec<ShioriDownloadCommand> =
         data.into_iter().map(|r| r.into()).collect();
+    tracing::info!("Found {} playlist(s)", playlist_downloads.len());
 
     for playlist in playlist_downloads {
         let command: ShioriDownloadCommand = playlist;
