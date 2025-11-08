@@ -5,12 +5,11 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::prelude::*;
-use rand::seq::SliceRandom;
 use reqwest::{Client, header::HeaderMap};
 
 /// Generate random device information for authentication
 pub fn generate_device_info() -> DeviceInfo {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let version_info = ANDROID_VERSIONS.choose(&mut rng).unwrap();
     let android_version = version_info.version;
@@ -38,7 +37,7 @@ pub fn generate_device_info() -> DeviceInfo {
 
 /// Get coordinates for a region with random offset
 pub fn get_coords(region: &str) -> String {
-    let _rng = rand::thread_rng();
+    let _rng = rand::rng();
 
     // Extract region number (e.g., "JP13" -> 13)
     let region_num: usize = region
