@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--experimental-stream-dir-cache` flag to enable the next-gen cache dir structure. Here are some highlights:
   1. It separates folder for different streams so that further process of the raw segments could be simpler.
   2. It supports resume download with `--cache-dir` specified.
+- Added `--experimental-ui`(`--tui`) flag to enable the brand new TUI for shiori!
 
 ### Fixed
 

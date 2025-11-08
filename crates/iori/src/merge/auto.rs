@@ -224,9 +224,36 @@ where
     temp.write_all(serde_json::to_string(&args)?.as_bytes())?;
     temp.flush()?;
 
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
     let mut child = Command::new(mkvmerge)
         .arg(format!("@{}", temp_path.to_string_lossy()))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()?;
+
+    // Capture and log stdout
+    if let Some(stdout) = child.stdout.take() {
+        let stdout_reader = BufReader::new(stdout);
+        tokio::spawn(async move {
+            let mut lines = stdout_reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::info!("[mkvmerge] {}", line);
+            }
+        });
+    }
+
+    // Capture and log stderr
+    if let Some(stderr) = child.stderr.take() {
+        let stderr_reader = BufReader::new(stderr);
+        tokio::spawn(async move {
+            let mut lines = stderr_reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::warn!("[mkvmerge] {}", line);
+            }
+        });
+    }
+
     child.wait().await?;
 
     Ok(())
@@ -237,6 +264,8 @@ async fn mkvmerge_merge<O>(tracks: Vec<PathBuf>, output: O) -> IoriResult<()>
 where
     O: AsRef<Path>,
 {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
     assert!(tracks.len() > 1);
 
     let mkvmerge = which::which("mkvmerge")?;
@@ -244,7 +273,32 @@ where
         .args(tracks.iter())
         .arg("-o")
         .arg(output.as_ref().with_extension("mkv"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()?;
+
+    // Capture and log stdout
+    if let Some(stdout) = merge.stdout.take() {
+        let stdout_reader = BufReader::new(stdout);
+        tokio::spawn(async move {
+            let mut lines = stdout_reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::info!("[mkvmerge] {}", line);
+            }
+        });
+    }
+
+    // Capture and log stderr
+    if let Some(stderr) = merge.stderr.take() {
+        let stderr_reader = BufReader::new(stderr);
+        tokio::spawn(async move {
+            let mut lines = stderr_reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                tracing::warn!("[mkvmerge] {}", line);
+            }
+        });
+    }
+
     merge.wait().await?;
 
     // remove temporary files

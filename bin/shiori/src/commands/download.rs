@@ -1,5 +1,6 @@
 use super::inspect::{InspectorOptions, get_default_external_inspector};
 use crate::{
+    ShioriApp,
     commands::{ShioriArgs, update::check_update},
     i18n::ClapI18n,
     inspect::InspectPlaylist,
@@ -14,7 +15,7 @@ use iori::{
         opendal::{Operator, services},
     },
     dash::live::CommonDashLiveSource,
-    download::{ParallelDownloader, TracingApp, spawn_ctrlc_handler},
+    download::{ParallelDownloader, spawn_ctrlc_handler},
     hls::HlsLiveSource,
     merge::IoriMerger,
     raw::{HttpFileSource, RawDataSource, RawRemoteSegmentsSource},
@@ -37,7 +38,7 @@ use tokio::sync::oneshot;
 #[clap(name = "download", visible_alias = "dl", short_flag = 'D')]
 pub struct DownloadCommand<I>
 where
-    I: Args + Default,
+    I: Args + Clone + Default + Send + Sync + 'static,
 {
     #[clap(flatten)]
     pub http: HttpOptions,
@@ -61,6 +62,10 @@ where
     #[clap(about_ll = "download-wait")]
     pub wait: bool,
 
+    #[clap(long = "experimental-ui", visible_alias = "tui")]
+    #[clap(about_ll = "download-experimental-ui")]
+    pub experimental_ui: bool,
+
     #[clap(flatten)]
     pub inspector_options: I,
 
@@ -70,9 +75,10 @@ where
 
 impl<Ext> DownloadCommand<Ext>
 where
-    Ext: Args + Default,
+    Ext: Args + Clone + Default + Send + Sync + 'static,
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
+        let app = ShioriApp::new(self.clone());
         let client = self.http.into_client(&self.url);
 
         let playlist_type = match self.extra.playlist_type {
@@ -89,7 +95,7 @@ where
         };
 
         let downloader = ParallelDownloader::builder()
-            .app(TracingApp::concurrent(self.download.concurrency))
+            .app(app)
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
@@ -398,6 +404,7 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
     let (_, data) = get_default_external_inspector()
         .wait(me.wait)
         .inspect(&me.url, &me.inspector_options, |c| {
+            tracing::warn!("Selecting inspector candidates is not implemented yet. Falling back to the first candidate.");
             c.into_iter().next().unwrap()
         })
         .await?;
@@ -420,7 +427,7 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
 
 impl<Ext> From<InspectPlaylist> for DownloadCommand<Ext>
 where
-    Ext: Args + Default,
+    Ext: Args + Clone + Default + Send + Sync + 'static,
 {
     fn from(data: InspectPlaylist) -> Self {
         Self {

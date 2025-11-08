@@ -1,6 +1,7 @@
 shiori-about = 又一个直播下载器
 
 download-wait = 当未检测到直播流时，是否等待直播流开始
+download-experimental-ui = 启用实验性 TUI
 download-url = 视频地址
 
 download-http-headers = 设置 HTTP header，格式为 key: value
