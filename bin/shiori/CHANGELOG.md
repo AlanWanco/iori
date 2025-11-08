@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - Unreleased
 
+### Features
+
+- Supported download of free programs on sheeta-based platforms (`nicochannel+`, `qlover+`, and auto-detecting other supported sites).
+- Supported radiko live and timeshift download.
+- Supported Niconico (sm-) video download.
+- Added `--no-recycle` flag to keep downloaded segment for all cache methods. ([#32](https://github.com/iori-rs/iori/pull/32))
+
+### Experimental Features
+
+- Added `--experimental-stream-dir-cache` flag to enable the next-gen cache dir structure.
+
 ### Fixed
 
-- Correct `shaka-packager` command when multiple keys exist
+- Now correct `shaka-packager` command will be used when multiple keys exist.
+- Fixed multiple style problems in generated nico danmaku ass. ([#29](https://github.com/iori-rs/iori/issues/29), [#30](https://github.com/iori-rs/iori/issues/30))
+- Custom header key and value are correctly trimmed now. ([#36](https://github.com/iori-rs/iori/issues/36))
 
 ## [0.2.6] - 2025-06-21
 
@@ -114,7 +127,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **NicoLive**: `NicoLiveInspector` now extracts the best quality stream.
 - **NicoLive**: `NicoLiveInspector` now always uses `http1` for `WebSocket` connection.
-
 
 ## [0.1.3] - 2025-03-28
 
