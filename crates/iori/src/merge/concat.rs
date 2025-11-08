@@ -1,6 +1,9 @@
 use super::Merger;
 use crate::{
-    SegmentInfo, cache::CacheSource, error::IoriResult, util::path::DuplicateOutputFileNamer,
+    SegmentInfo,
+    cache::CacheSource,
+    error::IoriResult,
+    util::path::{DuplicateOutputFileNamer, IoriPathExt},
 };
 use std::path::PathBuf;
 use tokio::fs::File;
@@ -47,7 +50,12 @@ impl Merger for ConcatAfterMerger {
 
     async fn finish(&mut self, cache: impl CacheSource) -> IoriResult<Self::Result> {
         tracing::info!("Merging chunks...");
-        concat_merge(&mut self.segments, &cache, self.output_file.clone()).await?;
+        concat_merge(
+            &mut self.segments,
+            &cache,
+            self.output_file.clone().sanitize().deduplicate()?,
+        )
+        .await?;
 
         if self.recycle {
             tracing::info!("End of merging.");

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use sanitize_filename_reader_friendly::sanitize;
 use tokio::fs::File;
 
 use crate::{
@@ -87,8 +88,7 @@ impl StreamDirCacheSource {
     where
         P: AsRef<Path>,
     {
-        // TODO: Normalize filename correctly
-        let filename = segment.file_name.replace('/', "__");
+        let filename = sanitize(&segment.file_name);
         let sequence = segment.sequence;
         let filename = format!("{sequence:06}_{filename}");
 

@@ -14,6 +14,7 @@ pub use reqwest;
 pub mod utils {
     pub use crate::util::detect_manifest_type;
     pub use crate::util::path::DuplicateOutputFileNamer;
+    pub use crate::util::path::sanitize;
 }
 
 mod segment;

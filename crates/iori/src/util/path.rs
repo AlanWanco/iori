@@ -3,6 +3,9 @@ use std::{
     path::PathBuf,
 };
 
+use crate::{IoriError, IoriResult};
+pub use sanitize_filename_reader_friendly::sanitize;
+
 pub struct DuplicateOutputFileNamer {
     output_path: PathBuf,
     /// The count of files that have been generated.
@@ -64,6 +67,10 @@ pub trait IoriPathExt {
 
     fn with_replaced_extension(&self, new_extension: &str, replace_list: &[&str]) -> PathBuf;
 
+    fn sanitize(self) -> PathBuf;
+
+    fn deduplicate(self) -> IoriResult<PathBuf>;
+
     fn non_empty_file_exists(&self) -> bool;
 }
 
@@ -115,6 +122,64 @@ impl IoriPathExt for PathBuf {
         path
     }
 
+    /// Sanitize the path to make it filesystem-compatible and reader-friendly.
+    ///
+    /// This method sanitizes all path components (directories and filename) using
+    /// the `sanitize-filename-reader-friendly` crate, which:
+    /// - Replaces non-filesystem compatible characters with underscores and spaces
+    /// - Replaces unprintable punctuation with underscores
+    /// - Replaces other unprintable characters with spaces
+    /// - Replaces newlines with hyphens
+    /// - Trims underscores and spaces at the beginning, end, or when repeated
+    ///
+    /// This ensures maximum compatibility across different operating systems while
+    /// keeping filenames readable.
+    fn sanitize(self) -> PathBuf {
+        use std::path::Component;
+
+        let mut result = PathBuf::new();
+        let components: Vec<_> = self.components().collect();
+
+        for component in components.iter() {
+            match component {
+                Component::Normal(name) => {
+                    if let Some(name_str) = name.to_str() {
+                        let sanitized = sanitize_filename_reader_friendly::sanitize(name_str);
+                        result.push(sanitized);
+                    } else {
+                        // If conversion fails, keep original
+                        result.push(name);
+                    }
+                }
+                component => {
+                    result.push(component);
+                }
+            }
+        }
+
+        result
+    }
+
+    fn deduplicate(mut self) -> IoriResult<PathBuf> {
+        let mut current_layer = 0;
+        while self.exists() {
+            current_layer += 1;
+
+            // {filename}_{timestamp}_{layer}_{layer}
+            if current_layer == 1 {
+                let timestamp = chrono::Utc::now().timestamp();
+                self.add_suffix(format!("{timestamp}"));
+            } else if current_layer == 2 || current_layer == 3 {
+                self.add_suffix(format!("{current_layer}"));
+            } else {
+                return Err(IoriError::IOError(std::io::Error::other(
+                    "Failed to deduplicate file",
+                )));
+            }
+        }
+        Ok(self)
+    }
+
     /// The path is file and it exists
     fn non_empty_file_exists(&self) -> bool {
         self.metadata()
@@ -158,6 +223,21 @@ mod tests {
     }
 
     #[test]
+    fn test_replace_extension_in_replace_list_multiple_suffix() {
+        // 【ご来賓:水野朔さん】和久井優と土屋李央の「放課後が終わらない！」#63【土屋さんBD】.1..mp4
+        let path = PathBuf::from(
+            "【ご来賓:水野朔さん】和久井優と土屋李央の「放課後が終わらない！」#63【土屋さんBD】.1.",
+        );
+        let result = path.with_replaced_extension("mp4", &["mp4", "mkv", "ts"]);
+        assert_eq!(
+            result,
+            PathBuf::from(
+                "【ご来賓:水野朔さん】和久井優と土屋李央の「放課後が終わらない！」#63【土屋さんBD】.1..mp4"
+            )
+        );
+    }
+
+    #[test]
     fn test_replace_extension_for_none_extension() {
         let mut path = PathBuf::from("test");
         path.replace_extension("ts", &["mp4"]);
@@ -169,5 +249,136 @@ mod tests {
         let mut path = PathBuf::from("test.aws");
         path.replace_extension("ts", &["mkv"]);
         assert_eq!(path.to_string_lossy(), "test.aws.ts");
+    }
+
+    #[test]
+    fn test_sanitize_normal_filename() {
+        let path = PathBuf::from("test.mp4");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "test.mp4");
+    }
+
+    #[test]
+    fn test_sanitize_filename_with_special_chars() {
+        // Windows disallows: < > : " / \ | ? *
+        let path = PathBuf::from("test:file?.mp4");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "test_file_.mp4");
+    }
+
+    #[test]
+    fn test_sanitize_filename_ending_with_space() {
+        // The library replaces dots with spaces in certain contexts
+        let path = PathBuf::from("test .mp4");
+        let sanitized = path.sanitize();
+        // Note: behavior depends on the sanitize-filename-reader-friendly library
+        assert_eq!(sanitized.to_string_lossy(), "test mp4");
+    }
+
+    #[test]
+    fn test_sanitize_filename_ending_with_dot() {
+        // The library preserves dots
+        let path = PathBuf::from("test..mp4");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "test..mp4");
+    }
+
+    #[test]
+    fn test_sanitize_japanese_filename() {
+        // Japanese characters should be preserved
+        let path = PathBuf::from(
+            "【ご来賓:水野朔さん】和久井優と土屋李央の「放課後が終わらない！」#63【土屋さんBD】.mp4",
+        );
+        let sanitized = path.sanitize();
+        // The colon should be replaced with underscore
+        assert!(sanitized.to_string_lossy().contains("_"));
+        assert!(!sanitized.to_string_lossy().contains(":"));
+    }
+
+    #[test]
+    fn test_sanitize_with_path() {
+        // Should sanitize all path components
+        let path = PathBuf::from("some/path/test:file.mp4");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "some/path/test_file.mp4");
+    }
+
+    #[test]
+    fn test_sanitize_path_with_special_chars_in_dirs() {
+        // Should sanitize directory names too
+        let path = PathBuf::from("folder:name/sub?dir/file.txt");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "folder_name/sub_dir/file.txt");
+    }
+
+    #[test]
+    fn test_sanitize_path_with_reserved_dir_names() {
+        // Note: sanitize-filename-reader-friendly doesn't add prefix to reserved names
+        let path = PathBuf::from("CON/PRN/file.txt");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "CON/PRN/file.txt");
+    }
+
+    #[test]
+    fn test_sanitize_path_with_trailing_dots_in_dirs() {
+        // The library removes trailing dots from path components
+        let path = PathBuf::from("folder./subdir../file.txt");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "folder/subdir/file.txt");
+    }
+
+    #[test]
+    fn test_sanitize_all_special_chars() {
+        // Note: '/' is a path separator and will cause PathBuf to split the path,
+        // The library replaces special chars with underscores and spaces for readability
+        let path = PathBuf::from(r#"file<>:"\|?*.txt"#);
+        let sanitized = path.sanitize();
+        // The exact output depends on sanitize-filename-reader-friendly's behavior
+        assert_eq!(sanitized.to_string_lossy(), "file _ _ txt");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_path_structure() {
+        // Forward slash is a path separator, structure should be preserved
+        let path = PathBuf::from("file/name.txt");
+        let sanitized = path.sanitize();
+        // Path structure should be preserved
+        assert_eq!(sanitized.to_string_lossy(), "file/name.txt");
+    }
+
+    #[test]
+    fn test_sanitize_absolute_path() {
+        // Test absolute path
+        let path = PathBuf::from("/home/user:name/file?.txt");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "/home/user_name/file_.txt");
+    }
+
+    #[test]
+    fn test_sanitize_multiple_trailing_chars() {
+        // The library preserves dots and converts some to spaces
+        let path = PathBuf::from("test... .mp4");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "test... mp4");
+    }
+
+    #[test]
+    fn test_sanitize_reserved_name_without_extension() {
+        // Note: sanitize-filename-reader-friendly doesn't modify reserved names
+        let path = PathBuf::from("NUL");
+        let sanitized = path.sanitize();
+        assert_eq!(sanitized.to_string_lossy(), "NUL");
+    }
+
+    #[test]
+    fn test_sanitize_com_lpt_names() {
+        // Note: sanitize-filename-reader-friendly doesn't modify reserved names
+        let path1 = PathBuf::from("COM1.txt");
+        let sanitized1 = path1.sanitize();
+        assert_eq!(sanitized1.to_string_lossy(), "COM1.txt");
+
+        let path2 = PathBuf::from("LPT9.log");
+        let sanitized2 = path2.sanitize();
+        assert_eq!(sanitized2.to_string_lossy(), "LPT9.log");
     }
 }

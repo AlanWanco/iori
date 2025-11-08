@@ -18,7 +18,7 @@ use iori::{
     hls::HlsLiveSource,
     merge::IoriMerger,
     raw::{HttpFileSource, RawDataSource, RawRemoteSegmentsSource},
-    utils::{DuplicateOutputFileNamer, detect_manifest_type},
+    utils::{detect_manifest_type, sanitize},
 };
 use reqwest::{
     Client, IntoUrl,
@@ -405,19 +405,9 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
     let playlist_downloads: Vec<ShioriDownloadCommand> =
         data.into_iter().map(|r| r.into()).collect();
 
-    let mut namer = me
-        .output
-        .output
-        .as_ref()
-        .map(|p| DuplicateOutputFileNamer::new(p.clone()));
-
     for playlist in playlist_downloads {
         let command: ShioriDownloadCommand = playlist;
-        let mut cmd = me.clone().merge(command);
-        if let Some(namer) = namer.as_mut() {
-            let output = namer.next_path();
-            cmd.output.output = Some(output);
-        }
+        let cmd = me.clone().merge(command);
         cmd.download(spawn_ctrlc_handler()).await?;
     }
 
@@ -454,31 +444,7 @@ where
                 initial_playlist_data: data.initial_playlist_data,
             },
             output: OutputOptions {
-                output: data.title.map(|title| {
-                    let path = std::path::Path::new(&title);
-                    // Replace invalid characters with underscores
-                    let filename = path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|name| {
-                            name.replace(
-                                |c: char| {
-                                    c == '/'
-                                        || c == '\\'
-                                        || c == ':'
-                                        || c == '*'
-                                        || c == '?'
-                                        || c == '"'
-                                        || c == '<'
-                                        || c == '>'
-                                        || c == '|'
-                                },
-                                "_",
-                            )
-                        })
-                        .unwrap_or_else(|| title.clone());
-                    filename.into()
-                }),
+                output: data.title.map(|title| sanitize(&title).into()),
                 output_mode: OutputModeOptions {
                     pipe_mux: data.streams_hint.unwrap_or(1) > 1,
                     ..Default::default()

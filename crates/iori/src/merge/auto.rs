@@ -98,6 +98,12 @@ impl Merger for AutoMerger {
 
             segments.sort_by(|a, b| a.sequence.cmp(&b.sequence));
 
+            if output_path.exists() {
+                let timestamp = chrono::Utc::now().timestamp();
+                output_path.add_suffix(format!("{timestamp}"));
+            }
+            // TODO: if the file still exists, throw error
+
             let can_concat = segments.iter().all(|s| {
                 matches!(
                     s.format,
@@ -131,15 +137,19 @@ impl Merger for AutoMerger {
                     .output_file
                     .with_replaced_extension(ext, &self.allowed_extensions),
                 None => self.output_file.clone(),
-            };
+            }
+            .sanitize()
+            .deduplicate()?;
             tokio::fs::rename(&tracks[0], &output).await?;
             output
         } else {
             #[cfg(feature = "ffmpeg")]
             {
-                let output = self
+                let mut output = self
                     .output_file
-                    .with_replaced_extension("mp4", &self.allowed_extensions);
+                    .with_replaced_extension("mp4", &self.allowed_extensions)
+                    .sanitize()
+                    .deduplicate()?;
                 super::ffmpeg::ffmpeg_merge(tracks, &output).await?;
                 output
             }
@@ -147,7 +157,9 @@ impl Merger for AutoMerger {
             {
                 let output = self
                     .output_file
-                    .with_replaced_extension("mkv", &self.allowed_extensions);
+                    .with_replaced_extension("mkv", &self.allowed_extensions)
+                    .sanitize()
+                    .deduplicate()?;
                 mkvmerge_merge(tracks, &output).await?;
                 output
             }

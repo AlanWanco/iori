@@ -1,5 +1,6 @@
 use super::{CacheSource, CacheSourceReader, CacheSourceWriter};
 use crate::{IoriError, error::IoriResult, util::path::IoriPathExt};
+use sanitize_filename_reader_friendly::sanitize;
 use std::path::PathBuf;
 use tokio::fs::File;
 
@@ -25,7 +26,7 @@ impl FileCacheSource {
     }
 
     fn segment_path(&self, segment: &crate::SegmentInfo) -> PathBuf {
-        let filename = segment.file_name.replace('/', "__");
+        let filename = sanitize(&segment.file_name);
         let stream_id = segment.stream_id;
         let sequence = segment.sequence;
         let filename = format!("{stream_id:02}_{sequence:06}_{filename}");

@@ -1,5 +1,6 @@
 use super::{CacheSource, CacheSourceReader, CacheSourceWriter};
 use crate::error::IoriResult;
+use sanitize_filename_reader_friendly::sanitize;
 use std::path::PathBuf;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
@@ -30,7 +31,7 @@ impl OpendalCacheSource {
 
     fn segment_key(&self, segment: &crate::SegmentInfo) -> String {
         let prefix = &self.prefix;
-        let filename = segment.file_name.replace('/', "__");
+        let filename = sanitize(&segment.file_name);
         if self.with_internal_prefix {
             let stream_id = segment.stream_id;
             let sequence = segment.sequence;
