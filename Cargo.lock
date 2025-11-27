@@ -302,8 +302,7 @@ dependencies = [
 [[package]]
 name = "bento4-src"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "709cf7e568a0bb209dba34edb901b72b3509172120a505639b92d837d6ed9c39"
+source = "git+https://github.com/iori-rs/vsd#06330f9ad90bff23369cd48364ffb22690baaac3"
 dependencies = [
  "cc",
 ]
