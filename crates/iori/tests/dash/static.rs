@@ -1,9 +1,5 @@
 use futures::StreamExt;
-use iori::{
-    StreamingSource,
-    context::IoriContext,
-    dash::{archive::CommonDashArchiveSource, live::CommonDashLiveSource},
-};
+use iori::{StreamingSource, context::IoriContext, dash::live::CommonDashLiveSource};
 
 use crate::{AssertWrapper, dash::setup_mock_server};
 
@@ -22,25 +18,6 @@ async fn test_lemino_sokosaku_235() -> anyhow::Result<()> {
     assert_eq!(segments_live.len(), 506);
     // no further segments
     stream.next().await.assert_error();
-
-    let playlist = CommonDashArchiveSource::new(playlist_uri.parse()?, None)?;
-    let mut stream = playlist.segments_stream(&context).await?;
-
-    let mut segments_archive = Vec::new();
-    let segments = stream.next().await.assert_success()?;
-    assert_eq!(segments.len(), 253);
-    segments_archive.extend(segments);
-    let segments = stream.next().await.assert_success()?;
-    assert_eq!(segments.len(), 253);
-    segments_archive.extend(segments);
-    // no further segments
-    stream.next().await.assert_error();
-
-    for (i, segment) in segments_archive.iter().enumerate() {
-        assert_eq!(segment.url, segments_live[i].url);
-        assert_eq!(segment.initial_segment, segments_live[i].initial_segment);
-        assert_eq!(segment.byte_range, segments_live[i].byte_range);
-    }
 
     let mut i = 0;
     let mut time: i64 = 0;

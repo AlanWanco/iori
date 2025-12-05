@@ -82,7 +82,7 @@ where
         let app = ShioriApp::new(self.clone());
         let client = self.http.into_client(&self.url);
         let context = IoriContext {
-            client: client.clone(),
+            client,
             shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
             manifest_retries: self.download.manifest_retries,
             segment_retries: self.download.segment_retries,
@@ -90,7 +90,7 @@ where
 
         let playlist_type = match self.extra.playlist_type {
             Some(ty) => ty,
-            None => detect_manifest_type(&self.url, &client)
+            None => detect_manifest_type(&self.url, &context.client)
                 .await
                 .map(|is_m3u8| {
                     if is_m3u8 {
