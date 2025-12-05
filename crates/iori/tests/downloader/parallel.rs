@@ -19,7 +19,7 @@ async fn test_parallel_downloader_with_failed_retry() -> anyhow::Result<()> {
 
     let cache = Arc::new(MemoryCacheSource::new());
 
-    ParallelDownloader::builder()
+    ParallelDownloader::builder(Default::default())
         .app(TracingApp::default())
         .merger(SkipMerger)
         .cache(cache.clone())
@@ -46,7 +46,7 @@ async fn test_parallel_downloader_with_success_retry() -> anyhow::Result<()> {
 
     let cache = Arc::new(MemoryCacheSource::new());
 
-    ParallelDownloader::builder()
+    ParallelDownloader::builder(Default::default())
         .app(TracingApp::default())
         .merger(SkipMerger)
         .cache(cache.clone())

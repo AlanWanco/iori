@@ -24,11 +24,11 @@ async fn main() -> anyhow::Result<()> {
     let started_at = started_at.duration_since(UNIX_EPOCH).unwrap().as_millis();
     let output_dir = std::env::temp_dir().join(format!("iori_pipe_{}", started_at));
 
-    let source = HlsLiveSource::new(Default::default(), url, key.as_deref(), None);
+    let source = HlsLiveSource::new(url, key.as_deref());
     let merger = PipeMerger::stdout(true);
     let cache = FileCacheSource::new(output_dir)?;
 
-    ParallelDownloader::builder()
+    ParallelDownloader::builder(Default::default())
         .cache(cache)
         .merger(merger)
         .concurrency(NonZeroU32::new(8).unwrap())

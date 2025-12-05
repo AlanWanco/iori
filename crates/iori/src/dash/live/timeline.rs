@@ -50,8 +50,6 @@ use super::{clock::Clock, selector::best_representation};
 /// > 3. Representations within a period are grouped into adaptation sets, which associate related
 /// > representations and decorate them with metadata.
 pub struct MPDTimeline {
-    client: HttpClient,
-
     presentation: DashPresentation,
 
     /// An MPD defines an ordered list of one or more consecutive non-overlapping periods ([DASH] 5.3.2).
@@ -65,9 +63,13 @@ pub struct MPDTimeline {
 }
 
 impl MPDTimeline {
-    pub async fn from_mpd(mpd: MPD, mpd_url: Option<&Url>, client: HttpClient) -> IoriResult<Self> {
+    pub async fn from_mpd(
+        client: &HttpClient,
+        mpd: MPD,
+        mpd_url: Option<&Url>,
+    ) -> IoriResult<Self> {
         let mut presentation = DashPresentation::from_mpd(&mpd);
-        presentation.sync_time(&mpd, client.clone()).await?;
+        presentation.sync_time(&mpd, client).await?;
 
         let mpd_base_url = mpd.base_url.first().map(|u| u.base.as_str());
         let base_url = match (mpd_base_url, mpd_url) {
@@ -91,7 +93,6 @@ impl MPDTimeline {
         }
 
         Ok(Self {
-            client,
             presentation,
             periods,
             time_shift_buffer_depth: mpd
@@ -119,6 +120,7 @@ impl MPDTimeline {
     /// Note that this function can not handle segment time at UNIX_EPOCH
     pub async fn segments_since(
         &self,
+        client: &HttpClient,
         since: Option<DateTime<Utc>>,
         key: Option<Arc<IoriKey>>,
     ) -> IoriResult<(Vec<DashSegment>, Option<DateTime<Utc>>)> {
@@ -260,8 +262,7 @@ impl MPDTimeline {
                                 if initial_segment.is_none() {
                                     if let Some(initialization) = initialization {
                                         let url = initialization.resolve(&template);
-                                        let data =
-                                            self.client.get(url).send().await?.bytes().await?;
+                                        let data = client.get(url).send().await?.bytes().await?;
                                         initial_segment = Some(InitialSegment::Encrypted(
                                             Arc::new(data.to_vec()),
                                         ));
@@ -359,7 +360,7 @@ impl MPDTimeline {
                             if initial_segment.is_none() {
                                 if let Some(initialization) = initialization {
                                     let url = initialization.resolve(&template);
-                                    let data = self.client.get(url).send().await?.bytes().await?;
+                                    let data = client.get(url).send().await?.bytes().await?;
                                     initial_segment =
                                         Some(InitialSegment::Encrypted(Arc::new(data.to_vec())));
                                 } else {
@@ -396,7 +397,7 @@ impl MPDTimeline {
 
                         let initial_segment = if let Some(initialization) = initialization {
                             InitialSegment::Encrypted(Arc::new(
-                                self.client
+                                client
                                     .get(initialization.url.clone())
                                     // TODO: support range
                                     .send()
@@ -460,18 +461,23 @@ impl MPDTimeline {
     }
 
     /// Sync clock for internal clock
-    pub async fn sync_time(&mut self, mpd: &MPD) -> IoriResult<()> {
-        self.presentation.sync_time(mpd, self.client.clone()).await
+    pub async fn sync_time(&mut self, mpd: &MPD, client: &HttpClient) -> IoriResult<()> {
+        self.presentation.sync_time(mpd, client).await
     }
 
-    pub async fn update_mpd(&mut self, mpd: MPD, mpd_url: &Url) -> IoriResult<()> {
+    pub async fn update_mpd(
+        &mut self,
+        client: &HttpClient,
+        mpd: MPD,
+        mpd_url: &Url,
+    ) -> IoriResult<()> {
         let mpd_base_url = mpd.base_url.first().map(|u| u.base.as_str());
         let base_url = match mpd_base_url {
             Some(mpd_base_url) => merge_baseurls(mpd_url, mpd_base_url)?,
             None => mpd_url.clone(),
         };
 
-        self.sync_time(&mpd).await.unwrap();
+        self.sync_time(&mpd, client).await.unwrap();
 
         let mut periods: Vec<DashPeriod> = Vec::with_capacity(mpd.periods.len());
         for period in mpd.periods {
@@ -518,7 +524,7 @@ impl DashPresentation {
         }
     }
 
-    pub async fn sync_time(&mut self, mpd: &MPD, client: HttpClient) -> IoriResult<()> {
+    pub async fn sync_time(&mut self, mpd: &MPD, client: &HttpClient) -> IoriResult<()> {
         if let DashPresentation::Dynamic { clock, .. } = self {
             clock.sync(mpd, client).await?;
         }

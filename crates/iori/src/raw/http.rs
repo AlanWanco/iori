@@ -4,21 +4,19 @@ use std::{fmt::Display, sync::Arc};
 use tokio::io::AsyncWrite;
 
 use crate::{
-    HttpClient, IoriResult, SegmentFormat, StreamType, StreamingSegment, StreamingSource,
-    decrypt::IoriKey,
+    IoriResult, SegmentFormat, StreamType, StreamingSegment, StreamingSource, WriteSegment,
+    context::IoriContext, decrypt::IoriKey,
 };
 
 pub struct HttpFileSource {
     url: Arc<String>,
-    client: HttpClient,
     ext: String,
 }
 
 impl HttpFileSource {
-    pub fn new(client: HttpClient, url: String, ext: String) -> Self {
+    pub fn new(url: String, ext: String) -> Self {
         Self {
             url: Arc::new(url),
-            client,
             ext,
         }
     }
@@ -79,9 +77,10 @@ impl StreamingSource for HttpFileSource {
 
     async fn segments_stream(
         &self,
+        context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         // detect whether range is supported
-        let response = self.client.get(self.url.as_str()).send().await?;
+        let response = context.client.get(self.url.as_str()).send().await?;
         let content_length = response
             .headers()
             .get(CONTENT_LENGTH)
@@ -133,15 +132,17 @@ impl StreamingSource for HttpFileSource {
 
         Ok(Box::pin(stream::once(async move { Ok(segments) })))
     }
+}
 
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
+impl WriteSegment for HttpSegment {
+    async fn write_segment<W>(&self, context: &IoriContext, writer: &mut W) -> IoriResult<()>
     where
         W: AsyncWrite + Unpin + Send,
     {
         use futures::stream::TryStreamExt;
 
-        let mut request = self.client.get(segment.url.as_str()).header(ACCEPT, "*/*");
-        if let Some(range) = &segment.range {
+        let mut request = context.client.get(self.url.as_str()).header(ACCEPT, "*/*");
+        if let Some(range) = &self.range {
             request = request.header(RANGE, range.to_string());
         }
 

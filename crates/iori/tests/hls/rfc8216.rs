@@ -7,10 +7,12 @@ async fn rfc8216_8_1_simple_media_playlist() -> anyhow::Result<()> {
     let (uri, _server) = setup_mock_server(data).await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(is_end);
     assert_eq!(streams.len(), 1);
@@ -44,10 +46,12 @@ async fn rfc8216_8_2_live_media_playlist_using_https() -> anyhow::Result<()> {
     let (uri, _server) = setup_mock_server(data).await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(!is_end);
     assert_eq!(streams.len(), 1);
@@ -87,13 +91,14 @@ async fn rfc8216_8_3_playlist_with_encrypted_media_segments() -> anyhow::Result<
 
     let client = HttpClient::default();
     let mut playlist = HlsPlaylistSource::new(
-        client,
         uri.parse()?,
         Some("1234567890abcdef1234567890abcdef"), // mocked key
     );
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(!is_end);
     assert_eq!(streams.len(), 1);
@@ -152,10 +157,12 @@ async fn rfc8216_8_4_master_playlist() -> anyhow::Result<()> {
         .await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(is_end);
     assert_eq!(streams.len(), 1);
@@ -207,10 +214,12 @@ async fn rfc8216_8_6_master_playlist_with_alternative_audio() -> anyhow::Result<
         .await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(is_end);
     assert_eq!(streams.len(), 2);
@@ -246,10 +255,12 @@ async fn rfc8216_8_7_master_playlist_with_alternative_video() -> anyhow::Result<
         .await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(is_end);
     assert_eq!(streams.len(), 1);

@@ -1,6 +1,6 @@
 use iori::{
-    HttpClient, cache::file::FileCacheSource, dash::live::CommonDashLiveSource,
-    download::ParallelDownloader, merge::SkipMerger,
+    cache::file::FileCacheSource, dash::live::CommonDashLiveSource, download::ParallelDownloader,
+    merge::SkipMerger,
 };
 use tracing::level_filters::LevelFilter;
 
@@ -20,9 +20,7 @@ async fn main() -> anyhow::Result<()> {
 
     let key_str = None;
 
-    let client = HttpClient::default();
-
-    let source = CommonDashLiveSource::new(client.clone(), mpd_url.parse()?, key_str)?;
+    let source = CommonDashLiveSource::new(mpd_url.parse()?, key_str)?;
 
     let cache_dir = std::env::temp_dir().join("iori_live_dash_example");
     tracing::info!("Using cache directory: {}", cache_dir.display());
@@ -30,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let cache = FileCacheSource::new(cache_dir)?;
     let merger = SkipMerger;
 
-    let downloader = ParallelDownloader::builder()
+    let downloader = ParallelDownloader::builder(Default::default())
         .cache(cache)
         .merger(merger)
         .ctrlc_handler();

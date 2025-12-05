@@ -1,8 +1,8 @@
-use futures::executor::block_on;
 use futures::{Stream, StreamExt, stream};
+use iori::context::IoriContext;
 use iori::{
     InitialSegment, IoriError, IoriResult, SegmentFormat, StreamType, StreamingSegment,
-    StreamingSource,
+    StreamingSource, WriteSegment,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -80,15 +80,18 @@ impl StreamingSource for TestSource {
 
     async fn segments_stream(
         &self,
+        _: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         Ok(Box::pin(stream::once(async { Ok(self.segments.clone()) })))
     }
+}
 
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
+impl WriteSegment for TestSegment {
+    async fn write_segment<W>(&self, _: &IoriContext, writer: &mut W) -> IoriResult<()>
     where
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
-        segment.write_data(writer).await
+        self.write_data(writer).await
     }
 }
 
@@ -109,9 +112,10 @@ async fn test_streaming_source_implementation() {
         },
     ];
 
+    let context = IoriContext::default();
     let source = TestSource::new(segments.clone());
     let mut stream = source
-        .segments_stream()
+        .segments_stream(&context)
         .await
         .expect("Failed to get segments stream");
 
@@ -128,8 +132,8 @@ async fn test_streaming_source_implementation() {
     }
 }
 
-#[test]
-fn test_streaming_source_fetch_segment() {
+#[tokio::test]
+async fn test_streaming_source_fetch_segment() {
     let segment = TestSegment {
         stream_id: 1,
         sequence: 0,
@@ -137,9 +141,11 @@ fn test_streaming_source_fetch_segment() {
         fail_count: Arc::new(AtomicU8::new(0)),
     };
 
-    let source = TestSource::new(vec![segment.clone()]);
     let mut writer = Vec::new();
-    block_on(source.fetch_segment(&segment, &mut writer)).unwrap();
+    segment
+        .write_segment(&Default::default(), &mut writer)
+        .await
+        .unwrap();
 
     let data = String::from_utf8(writer).unwrap();
     assert_eq!(data, "Segment 0 from stream 1");

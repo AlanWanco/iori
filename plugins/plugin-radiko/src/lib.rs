@@ -174,9 +174,11 @@ impl Inspect for RadikoTimefreeInspector {
 
             // Use the first available stream URL
             let stream = &stream_urls[0];
-            let mut source = HlsPlaylistSource::new(http_client.clone(), stream.url.clone(), None);
-            let latest_media_sequences = source.load_streams(3).await?;
-            let (segments, _) = source.load_segments(&latest_media_sequences, 3).await?;
+            let mut source = HlsPlaylistSource::new(stream.url.clone(), None);
+            let latest_media_sequences = source.load_streams(&http_client, 3).await?;
+            let (segments, _) = source
+                .load_segments(&http_client, &latest_media_sequences, 3)
+                .await?;
 
             for segment in segments.into_iter().flatten() {
                 all_segments.push(RawRemoteSegment {

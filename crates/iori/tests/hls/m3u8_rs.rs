@@ -10,10 +10,12 @@ async fn media_playlist_with_byterange() -> anyhow::Result<()> {
     let (playlist_uri, server) = setup_mock_server(data).await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, playlist_uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(playlist_uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(!is_end);
     assert_eq!(streams.len(), 1);
@@ -48,10 +50,12 @@ async fn mediaplaylist_byterange() -> anyhow::Result<()> {
     let (playlist_uri, server) = setup_mock_server(data).await;
 
     let client = HttpClient::default();
-    let mut playlist = HlsPlaylistSource::new(client, playlist_uri.parse()?, None);
+    let mut playlist = HlsPlaylistSource::new(playlist_uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(1).await?;
-    let (streams, is_end) = playlist.load_segments(&latest_media_sequences, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let (streams, is_end) = playlist
+        .load_segments(&client, &latest_media_sequences, 1)
+        .await?;
 
     assert!(is_end);
     assert_eq!(streams.len(), 1);

@@ -13,6 +13,7 @@ use iori::{
         IoriCache,
         opendal::{Configurator, Operator},
     },
+    context::IoriContext,
     download::ParallelDownloader,
     hls::HlsLiveSource,
     merge::IoriMerger,
@@ -181,7 +182,7 @@ async fn record_room(
     log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
 
     let client = HttpClient::default();
-    let source = HlsLiveSource::new(client, stream.url.clone(), None, None);
+    let source = HlsLiveSource::new(stream.url.clone(), None);
     let cache = IoriCache::opendal(
         operator.clone(),
         prefix.clone(),
@@ -189,7 +190,7 @@ async fn record_room(
         Some("application/octet-stream".to_string()),
     );
     let merger = IoriMerger::skip();
-    let result = ParallelDownloader::builder()
+    let result = ParallelDownloader::builder(IoriContext::new(client, None))
         .cache(cache)
         .merger(merger)
         .ctrlc_handler()

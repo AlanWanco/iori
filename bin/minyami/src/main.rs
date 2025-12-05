@@ -13,6 +13,7 @@ use fake_user_agent::get_chrome_rua;
 use iori::{
     HttpClient, StreamingSource,
     cache::IoriCache,
+    context::IoriContext,
     dash::archive::CommonDashArchiveSource,
     download::{ParallelDownloader, TracingApp},
     hls::{CommonM3u8ArchiveSource, HlsLiveSource, SegmentRange},
@@ -269,11 +270,16 @@ impl MinyamiArgs {
         }
     }
 
-    async fn download<S>(&self, source: S, cache: IoriCache) -> anyhow::Result<()>
+    async fn download<S>(
+        &self,
+        client: HttpClient,
+        source: S,
+        cache: IoriCache,
+    ) -> anyhow::Result<()>
     where
         S: StreamingSource + Send + Sync + 'static,
     {
-        ParallelDownloader::builder()
+        ParallelDownloader::builder(IoriContext::new(client, self.shaka_packager.clone()))
             .app(TracingApp::concurrent(self.threads))
             .cache(cache)
             .merger(self.merger())
@@ -316,10 +322,10 @@ impl MinyamiArgs {
                 )
             };
 
-            let source = NicoTimeshiftSource::new(client, wss_url, quality, false)
+            let source = NicoTimeshiftSource::new(client.clone(), wss_url, quality, false)
                 .await?
                 .with_retry(self.manifest_retries);
-            self.download(source, cache).await?;
+            self.download(client, source, cache).await?;
             return Ok(());
         }
 
@@ -328,36 +334,24 @@ impl MinyamiArgs {
             (true, true) => unimplemented!(),
             // DASH Archive
             (true, false) => {
-                let source = CommonDashArchiveSource::new(
-                    client,
-                    self.m3u8.clone(),
-                    self.key.as_deref(),
-                    self.shaka_packager.clone(),
-                )?;
-                self.download(source, cache).await?;
+                let source = CommonDashArchiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
+                self.download(client, source, cache).await?;
             }
             // HLS Live
             (false, true) => {
-                let source = HlsLiveSource::new(
-                    client,
-                    self.m3u8.clone(),
-                    self.key.as_deref(),
-                    self.shaka_packager.clone(),
-                )
-                .with_retry(self.manifest_retries);
-                self.download(source, cache).await?;
+                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())
+                    .with_retry(self.manifest_retries);
+                self.download(client, source, cache).await?;
             }
             // HLS Archive
             (false, false) => {
                 let source = CommonM3u8ArchiveSource::new(
-                    client,
                     self.m3u8.clone(),
                     self.key.as_deref(),
                     self.range,
-                    self.shaka_packager.clone(),
                 )
                 .with_retry(self.manifest_retries);
-                self.download(source, cache).await?;
+                self.download(client, source, cache).await?;
             }
         }
 

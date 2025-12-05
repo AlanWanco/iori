@@ -8,7 +8,10 @@ pub mod ordered_stream;
 pub mod path;
 pub mod range;
 
-pub async fn detect_manifest_type(url: &str, client: HttpClient) -> IoriResult<bool /* is m3u8 */> {
+pub async fn detect_manifest_type(
+    url: &str,
+    client: &HttpClient,
+) -> IoriResult<bool /* is m3u8 */> {
     // 1. chcek extension
     let url = reqwest::Url::parse(url)?;
     if url.path().to_lowercase().ends_with(".m3u8") {

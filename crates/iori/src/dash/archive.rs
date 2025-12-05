@@ -1,6 +1,5 @@
 use std::{
     borrow::Cow,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -8,12 +7,12 @@ use std::{
 };
 
 use futures::{Stream, stream};
-use tokio::{io::AsyncWrite, sync::mpsc};
+use tokio::sync::mpsc;
 use url::Url;
 
 use crate::{
-    InitialSegment, StreamType, StreamingSource, dash::segment::DashSegment, decrypt::IoriKey,
-    error::IoriResult, fetch::fetch_segment, util::http::HttpClient,
+    InitialSegment, StreamType, StreamingSource, context::IoriContext, dash::segment::DashSegment,
+    decrypt::IoriKey, error::IoriResult,
 };
 
 use super::{template::Template, url::merge_baseurls};
@@ -21,20 +20,13 @@ use super::{template::Template, url::merge_baseurls};
 // TODO: mark as deprecated
 // #[deprecated(note = "Use `CommonDashLiveSource` instead")]
 pub struct CommonDashArchiveSource {
-    client: HttpClient,
     mpd: Url,
     key: Option<Arc<IoriKey>>,
     sequence: AtomicU64,
-    shaka_packager_command: Option<PathBuf>,
 }
 
 impl CommonDashArchiveSource {
-    pub fn new(
-        client: HttpClient,
-        mpd: String,
-        key: Option<&str>,
-        shaka_packager_command: Option<PathBuf>,
-    ) -> IoriResult<Self> {
+    pub fn new(mpd: String, key: Option<&str>) -> IoriResult<Self> {
         let key = if let Some(k) = key {
             Some(Arc::new(IoriKey::clear_key(k)?))
         } else {
@@ -42,11 +34,9 @@ impl CommonDashArchiveSource {
         };
 
         Ok(Self {
-            client,
             mpd: Url::parse(&mpd)?,
             key,
             sequence: AtomicU64::new(0),
-            shaka_packager_command,
         })
     }
 }
@@ -56,10 +46,11 @@ impl StreamingSource for CommonDashArchiveSource {
 
     async fn segments_stream(
         &self,
+        context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let text = self
+        let text = context
             .client
             .get(self.mpd.as_ref())
             .header("Accept", "application/dash+xml,video/vnd.mpeg.dash.mpd")
@@ -164,7 +155,14 @@ impl StreamingSource for CommonDashArchiveSource {
                         if let Some(initialization) = segment_template.initialization {
                             let initialization = template.resolve(&initialization);
                             let url = merge_baseurls(&base_url, &initialization)?;
-                            let bytes = self.client.get(url).send().await?.bytes().await?.to_vec();
+                            let bytes = context
+                                .client
+                                .get(url)
+                                .send()
+                                .await?
+                                .bytes()
+                                .await?
+                                .to_vec();
                             InitialSegment::Encrypted(Arc::new(bytes))
                         } else {
                             InitialSegment::None
@@ -256,19 +254,5 @@ impl StreamingSource for CommonDashArchiveSource {
         Ok(Box::pin(stream::unfold(receiver, |mut receiver| async {
             receiver.recv().await.map(|item| (item, receiver))
         })))
-    }
-
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
-    where
-        W: AsyncWrite + Unpin + Send,
-    {
-        fetch_segment(
-            self.client.clone(),
-            segment,
-            writer,
-            self.shaka_packager_command.clone(),
-        )
-        .await?;
-        Ok(())
     }
 }

@@ -14,6 +14,7 @@ use iori::{
         IoriCache,
         opendal::{Operator, services},
     },
+    context::IoriContext,
     dash::live::CommonDashLiveSource,
     download::{ParallelDownloader, spawn_ctrlc_handler},
     hls::HlsLiveSource,
@@ -80,10 +81,11 @@ where
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
         let client = self.http.into_client(&self.url);
+        let context = IoriContext::new(client.clone(), self.decrypt.shaka_packager_command.clone());
 
         let playlist_type = match self.extra.playlist_type {
             Some(ty) => ty,
-            None => detect_manifest_type(&self.url, client.clone())
+            None => detect_manifest_type(&self.url, &client)
                 .await
                 .map(|is_m3u8| {
                     if is_m3u8 {
@@ -94,7 +96,7 @@ where
                 })?,
         };
 
-        let downloader = ParallelDownloader::builder()
+        let downloader = ParallelDownloader::builder(context)
             .app(app)
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
@@ -110,18 +112,12 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(
-                    client,
-                    self.url,
-                    self.decrypt.key.as_deref(),
-                    self.decrypt.shaka_packager_command,
-                )
-                .with_retry(self.download.manifest_retries);
+                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())
+                    .with_retry(self.download.manifest_retries);
                 downloader.download(source).await?;
             }
             PlaylistType::DASH => {
                 let source = CommonDashLiveSource::new(
-                    client,
                     self.url.parse()?,
                     self.decrypt.key.as_deref(),
                     // self.decrypt.shaka_packager_command.clone(),
@@ -135,11 +131,11 @@ where
                 }
             }
             PlaylistType::Http => {
-                let source = HttpFileSource::new(client, self.url, "raw".to_string());
+                let source = HttpFileSource::new(self.url, "raw".to_string());
                 downloader.download(source).await?;
             }
             PlaylistType::RawRemoteSegments(segments) => {
-                let source = RawRemoteSegmentsSource::new(client.clone(), segments);
+                let source = RawRemoteSegmentsSource::new(segments);
                 downloader.download(source).await?;
             }
         }

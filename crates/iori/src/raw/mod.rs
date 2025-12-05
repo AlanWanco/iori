@@ -1,4 +1,4 @@
-use crate::{IoriResult, StreamingSegment, StreamingSource};
+use crate::{IoriResult, StreamingSegment, StreamingSource, WriteSegment, context::IoriContext};
 use futures::{Stream, stream};
 use std::{borrow::Cow, path::PathBuf};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -73,17 +73,20 @@ impl StreamingSource for RawDataSource {
 
     async fn segments_stream(
         &self,
+        _: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         Ok(Box::pin(stream::once(async move {
             Ok(vec![RawSegment::new(self.data.clone(), self.ext.clone())])
         })))
     }
+}
 
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
+impl WriteSegment for RawSegment {
+    async fn write_segment<W>(&self, _: &IoriContext, writer: &mut W) -> IoriResult<()>
     where
         W: AsyncWrite + Unpin + Send,
     {
-        writer.write_all(segment.data.as_bytes()).await?;
+        writer.write_all(self.data.as_bytes()).await?;
         Ok(())
     }
 }

@@ -1,11 +1,9 @@
+use futures::{Stream, stream};
 use std::sync::Mutex;
 
-use futures::{Stream, stream};
-use tokio::io::AsyncWrite;
-
 use crate::{
-    ByteRange, HttpClient, IoriResult, RemoteStreamingSegment, StreamType, StreamingSegment,
-    StreamingSource, fetch::fetch_segment,
+    ByteRange, IoriResult, RemoteStreamingSegment, StreamType, StreamingSegment, StreamingSource,
+    context::IoriContext,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -57,14 +55,12 @@ impl RemoteStreamingSegment for RawRemoteSegment {
 }
 
 pub struct RawRemoteSegmentsSource {
-    client: HttpClient,
     segments: Mutex<Vec<RawRemoteSegment>>,
 }
 
 impl RawRemoteSegmentsSource {
-    pub fn new(client: HttpClient, segments: Vec<RawRemoteSegment>) -> Self {
+    pub fn new(segments: Vec<RawRemoteSegment>) -> Self {
         Self {
-            client,
             segments: Mutex::new(segments),
         }
     }
@@ -75,16 +71,10 @@ impl StreamingSource for RawRemoteSegmentsSource {
 
     async fn segments_stream(
         &self,
+        _: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let segments = self.segments.lock().unwrap().drain(..).collect();
 
         Ok(stream::once(async move { Ok(segments) }))
-    }
-
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
-    where
-        W: AsyncWrite + Unpin + Send,
-    {
-        fetch_segment(self.client.clone(), segment, writer, None).await
     }
 }

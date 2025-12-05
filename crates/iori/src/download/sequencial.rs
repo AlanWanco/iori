@@ -4,7 +4,8 @@ use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    IoriError, SegmentInfo, StreamingSource, cache::CacheSource, error::IoriResult, merge::Merger,
+    IoriError, SegmentInfo, StreamingSource, WriteSegment, cache::CacheSource,
+    context::IoriContext, error::IoriResult, merge::Merger,
 };
 
 pub struct SequencialDownloader<S, M, C>
@@ -13,6 +14,8 @@ where
     M: Merger,
     C: CacheSource,
 {
+    context: IoriContext,
+
     source: S,
     merger: M,
     cache: Arc<C>,
@@ -24,8 +27,9 @@ where
     M: Merger,
     C: CacheSource,
 {
-    pub fn new(source: S, merger: M, cache: C) -> Self {
+    pub fn new(context: IoriContext, source: S, merger: M, cache: C) -> Self {
         Self {
+            context,
             source,
             merger,
             cache: Arc::new(cache),
@@ -33,7 +37,7 @@ where
     }
 
     pub async fn download(&mut self) -> IoriResult<()> {
-        let stream = self.source.segments_stream().await?;
+        let stream = self.source.segments_stream(&self.context).await?;
         tokio::pin!(stream);
 
         while let Some(segment) = stream.next().await {
@@ -44,7 +48,7 @@ where
                     continue;
                 };
 
-                let fetch_result = self.source.fetch_segment(&segment, &mut writer).await;
+                let fetch_result = segment.write_segment(&self.context, &mut writer).await;
                 let fetch_result = match fetch_result {
                     // graceful shutdown
                     Ok(_) => writer.shutdown().await.map_err(IoriError::IOError),

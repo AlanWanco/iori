@@ -1,9 +1,11 @@
+use crate::WriteSegment;
+use crate::context::IoriContext;
 use crate::{
     IoriError, SegmentInfo, StreamingSegment, StreamingSource, cache::CacheSource,
     download::DownloaderApp, error::IoriResult, merge::Merger,
 };
 use futures::StreamExt;
-use std::{future::Future, num::NonZeroU32, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
 
@@ -37,6 +39,8 @@ where
     C: CacheSource,
     A: DownloaderApp,
 {
+    context: IoriContext,
+
     source: Arc<S>,
     concurrency: NonZeroU32,
     permits: Arc<Semaphore>,
@@ -55,8 +59,8 @@ where
     M: Merger + Send + Sync + 'static,
     C: CacheSource + Send + Sync + 'static,
 {
-    pub fn builder() -> ParallelDownloaderBuilder<M, C, M::Result, ()> {
-        ParallelDownloaderBuilder::new()
+    pub fn builder(context: IoriContext) -> ParallelDownloaderBuilder<M, C, M::Result, ()> {
+        ParallelDownloaderBuilder::new(context)
     }
 }
 
@@ -68,6 +72,7 @@ where
     A: DownloaderApp + Send + Sync + 'static,
 {
     pub(crate) fn new(
+        context: IoriContext,
         app: A,
         source: S,
         merger: M,
@@ -79,6 +84,7 @@ where
         let permits = Arc::new(Semaphore::new(concurrency.get() as usize));
 
         Self {
+            context,
             app: Arc::new(app),
             source: Arc::new(source),
             merger: Arc::new(Mutex::new(merger)),
@@ -94,7 +100,7 @@ where
     pub async fn download(self) -> IoriResult<M::Result> {
         self.app.on_start().await?;
 
-        let stream = self.source.segments_stream().await?;
+        let stream = self.source.segments_stream(&self.context).await?;
         tokio::pin!(stream);
 
         while let Some(segments) = stream.next().await {
@@ -114,8 +120,8 @@ where
 
                 let permit = self.permits.clone().acquire_owned().await.unwrap();
 
+                let context = self.context.clone();
                 let app = self.app.clone();
-                let source = self.source.clone();
                 let merger = self.merger.clone();
                 let cache = self.cache.clone();
 
@@ -153,7 +159,7 @@ where
                         };
 
                         // Workaround for `higher-ranked lifetime error`
-                        let result = assert_send(source.fetch_segment(&segment, &mut writer)).await;
+                        let result = segment.write_segment(&context, &mut writer).await;
                         let result = match result {
                             // graceful shutdown
                             Ok(_) => writer.shutdown().await.map_err(IoriError::IOError),
@@ -201,15 +207,9 @@ where
     }
 }
 
-// https://github.com/rust-lang/rust/issues/102211#issuecomment-1371414544
-// TODO: remove this when this issue is fixed
-fn assert_send<'a, T>(
-    fut: impl Future<Output = T> + Send + 'a,
-) -> impl Future<Output = T> + Send + 'a {
-    fut
-}
-
 pub struct ParallelDownloaderBuilder<M, C, MR, A> {
+    context: IoriContext,
+
     concurrency: NonZeroU32,
     retries: u32,
     merger: Option<M>,
@@ -226,8 +226,9 @@ where
     C: CacheSource,
     A: DownloaderApp + Send + Sync + 'static,
 {
-    pub fn new() -> Self {
+    pub fn new(context: IoriContext) -> Self {
         Self {
+            context,
             concurrency: NonZeroU32::new(5).unwrap(),
             retries: 3,
             merger: None,
@@ -273,6 +274,7 @@ where
         AA: DownloaderApp + Send + Sync + 'static,
     {
         ParallelDownloaderBuilder::<M, C, MR, AA> {
+            context: self.context,
             app: Some(app),
             concurrency: self.concurrency,
             retries: self.retries,
@@ -288,6 +290,7 @@ where
         S: StreamingSource + Send + Sync + 'static,
     {
         ParallelDownloader::new(
+            self.context,
             self.app.expect("App is not set"),
             source,
             self.merger.expect("Merger is not set"),
@@ -314,6 +317,6 @@ where
     A: DownloaderApp + Send + Sync + 'static,
 {
     fn default() -> Self {
-        Self::new()
+        Self::new(Default::default())
     }
 }

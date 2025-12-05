@@ -1,23 +1,20 @@
-use std::{num::ParseIntError, path::PathBuf, str::FromStr, sync::Arc};
+use std::{num::ParseIntError, str::FromStr, sync::Arc};
 
 use futures::{Stream, stream};
-use tokio::{io::AsyncWrite, sync::Mutex};
+use tokio::sync::Mutex;
 use url::Url;
 
 use crate::{
     StreamingSource,
+    context::IoriContext,
     error::IoriResult,
-    fetch::fetch_segment,
     hls::{segment::M3u8Segment, source::HlsPlaylistSource},
-    util::http::HttpClient,
 };
 
 pub struct CommonM3u8ArchiveSource {
-    client: HttpClient,
     playlist: Arc<Mutex<HlsPlaylistSource>>,
     range: SegmentRange,
     retry: u32,
-    shaka_packager_command: Option<PathBuf>,
 }
 
 /// A subrange for m3u8 archive sources to choose which segment to use
@@ -64,21 +61,12 @@ impl FromStr for SegmentRange {
 }
 
 impl CommonM3u8ArchiveSource {
-    pub fn new(
-        client: HttpClient,
-        playlist_url: String,
-        key: Option<&str>,
-        range: SegmentRange,
-        shaka_packager_command: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(playlist_url: String, key: Option<&str>, range: SegmentRange) -> Self {
         Self {
-            client: client.clone(),
             playlist: Arc::new(Mutex::new(HlsPlaylistSource::new(
-                client,
                 Url::parse(&playlist_url).unwrap(),
                 key,
             ))),
-            shaka_packager_command,
             range,
             retry: 3,
         }
@@ -95,14 +83,20 @@ impl StreamingSource for CommonM3u8ArchiveSource {
 
     async fn segments_stream(
         &self,
+        context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        let latest_media_sequences = self.playlist.lock().await.load_streams(self.retry).await?;
+        let latest_media_sequences = self
+            .playlist
+            .lock()
+            .await
+            .load_streams(&context.client, self.retry)
+            .await?;
 
         let (segments, _) = self
             .playlist
             .lock()
             .await
-            .load_segments(&latest_media_sequences, self.retry)
+            .load_segments(&context.client, &latest_media_sequences, self.retry)
             .await?;
         let mut segments: Vec<_> = segments
             .into_iter()
@@ -122,20 +116,6 @@ impl StreamingSource for CommonM3u8ArchiveSource {
         }
 
         Ok(Box::pin(stream::once(async move { Ok(segments) })))
-    }
-
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
-    where
-        W: AsyncWrite + Unpin + Send,
-    {
-        fetch_segment(
-            self.client.clone(),
-            segment,
-            writer,
-            self.shaka_packager_command.clone(),
-        )
-        .await?;
-        Ok(())
     }
 }
 

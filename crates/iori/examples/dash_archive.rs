@@ -21,11 +21,11 @@ async fn main() -> anyhow::Result<()> {
     let started_at = started_at.duration_since(UNIX_EPOCH).unwrap().as_millis();
     let output_dir = std::env::temp_dir().join(format!("iori_save_{}", started_at));
 
-    let source = CommonDashArchiveSource::new(Default::default(), url, key.as_deref(), None)?;
+    let source = CommonDashArchiveSource::new(url, key.as_deref())?;
     let merger = SkipMerger;
     let cache = FileCacheSource::new(output_dir)?;
 
-    let mut downloader = SequencialDownloader::new(source, merger, cache);
+    let mut downloader = SequencialDownloader::new(Default::default(), source, merger, cache);
     downloader.download().await?;
 
     Ok(())

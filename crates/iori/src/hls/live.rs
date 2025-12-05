@@ -1,42 +1,28 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
-
 use futures::{Stream, stream};
-use tokio::{
-    io::AsyncWrite,
-    sync::{Mutex, mpsc},
-};
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{Mutex, mpsc};
 use url::Url;
 
 use crate::{
     StreamingSource,
+    context::IoriContext,
     error::{IoriError, IoriResult},
-    fetch::fetch_segment,
     hls::{segment::M3u8Segment, source::HlsPlaylistSource},
-    util::{http::HttpClient, mix::VecMix},
+    util::mix::VecMix,
 };
 
 pub struct HlsLiveSource {
-    client: HttpClient,
     playlist: Arc<Mutex<HlsPlaylistSource>>,
     retry: u32,
-    shaka_packager_command: Option<PathBuf>,
 }
 
 impl HlsLiveSource {
-    pub fn new(
-        client: HttpClient,
-        m3u8_url: String,
-        key: Option<&str>,
-        shaka_packager_command: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(m3u8_url: String, key: Option<&str>) -> Self {
         Self {
-            client: client.clone(),
             playlist: Arc::new(Mutex::new(HlsPlaylistSource::new(
-                client,
                 Url::parse(&m3u8_url).unwrap(),
                 key,
             ))),
-            shaka_packager_command,
             retry: 3,
         }
     }
@@ -52,14 +38,20 @@ impl StreamingSource for HlsLiveSource {
 
     async fn segments_stream(
         &self,
+        context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        let mut latest_media_sequences =
-            self.playlist.lock().await.load_streams(self.retry).await?;
+        let mut latest_media_sequences = self
+            .playlist
+            .lock()
+            .await
+            .load_streams(&context.client, self.retry)
+            .await?;
 
         let (sender, receiver) = mpsc::unbounded_channel();
 
         let retry = self.retry;
         let playlist = self.playlist.clone();
+        let client = context.client.clone();
         tokio::spawn(async move {
             loop {
                 if sender.is_closed() {
@@ -70,7 +62,7 @@ impl StreamingSource for HlsLiveSource {
                 let (segments, is_end) = match playlist
                     .lock()
                     .await
-                    .load_segments(&latest_media_sequences, retry)
+                    .load_segments(&client, &latest_media_sequences, retry)
                     .await
                 {
                     Ok(v) => v,
@@ -130,19 +122,5 @@ impl StreamingSource for HlsLiveSource {
         Ok(Box::pin(stream::unfold(receiver, |mut receiver| async {
             receiver.recv().await.map(|item| (item, receiver))
         })))
-    }
-
-    async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
-    where
-        W: AsyncWrite + Unpin + Send,
-    {
-        fetch_segment(
-            self.client.clone(),
-            segment,
-            writer,
-            self.shaka_packager_command.clone(),
-        )
-        .await?;
-        Ok(())
     }
 }

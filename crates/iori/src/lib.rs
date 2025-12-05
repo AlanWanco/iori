@@ -9,6 +9,7 @@ pub mod dash;
 pub mod hls;
 
 pub(crate) mod util;
+use crate::context::IoriContext;
 pub use crate::util::http::HttpClient;
 pub use futures::Stream;
 pub use reqwest;
@@ -17,6 +18,8 @@ pub mod utils {
     pub use crate::util::path::DuplicateOutputFileNamer;
     pub use crate::util::path::sanitize;
 }
+
+pub mod context;
 
 mod segment;
 pub use segment::*;
@@ -47,19 +50,12 @@ pub use util::range::ByteRange;
 /// │                       ├────────────────►                    │
 /// └───────────────────────┘                └────────────────────┘
 pub trait StreamingSource {
-    type Segment: StreamingSegment + Send + 'static;
+    type Segment: StreamingSegment + WriteSegment + Send + 'static;
 
     fn segments_stream(
         &self,
+        context: &IoriContext,
     ) -> impl Future<Output = IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>>>;
-
-    fn fetch_segment<W>(
-        &self,
-        segment: &Self::Segment,
-        writer: &mut W,
-    ) -> impl Future<Output = IoriResult<()>> + Send
-    where
-        W: tokio::io::AsyncWrite + Unpin + Send;
 }
 
 pub trait StreamingSegment {
@@ -90,4 +86,14 @@ pub trait StreamingSegment {
 
     /// Format hint for the segment
     fn format(&self) -> SegmentFormat;
+}
+
+pub trait WriteSegment {
+    fn write_segment<W>(
+        &self,
+        context: &IoriContext,
+        writer: &mut W,
+    ) -> impl Future<Output = IoriResult<()>> + Send
+    where
+        W: tokio::io::AsyncWrite + Unpin + Send;
 }

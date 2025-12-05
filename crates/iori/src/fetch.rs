@@ -1,59 +1,12 @@
-use std::path::PathBuf;
-
 use reqwest::header::RANGE;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 use crate::{
-    InitialSegment, RemoteStreamingSegment, StreamingSegment, ToSegmentData,
+    InitialSegment, RemoteStreamingSegment, StreamingSegment, ToSegmentData, WriteSegment,
+    context::IoriContext,
     error::{IoriError, IoriResult},
     util::http::HttpClient,
 };
-
-pub async fn fetch_segment<S, W>(
-    client: HttpClient,
-    segment: &S,
-    tmp_file: &mut W,
-    shaka_packager_command: Option<PathBuf>,
-) -> IoriResult<()>
-where
-    S: StreamingSegment + ToSegmentData,
-    W: AsyncWrite + Unpin + Send,
-{
-    let bytes = segment.to_segment_data(client).await?;
-
-    // TODO: use bytes_stream to improve performance
-    // .bytes_stream();
-    let decryptor = segment
-        .key()
-        .map(|key| key.to_decryptor(segment.format(), shaka_packager_command));
-    if let Some(decryptor) = decryptor {
-        let decrypted_bytes = match segment.initial_segment() {
-            crate::InitialSegment::Encrypted(data) => {
-                let mut result = data.to_vec();
-                result.extend_from_slice(&bytes);
-                decryptor.decrypt(&result).await?
-            }
-            crate::InitialSegment::Clear(data) => {
-                tmp_file.write_all(&data).await?;
-                decryptor.decrypt(&bytes).await?
-            }
-            crate::InitialSegment::None => decryptor.decrypt(&bytes).await?,
-        };
-        tmp_file.write_all(&decrypted_bytes).await?;
-    } else {
-        // If no key is provided, no matter whether the initial segment is encrypted or not,
-        // we should write the initial segment to the file.
-        if let InitialSegment::Clear(initial_segment) | InitialSegment::Encrypted(initial_segment) =
-            segment.initial_segment()
-        {
-            tmp_file.write_all(&initial_segment).await?;
-        }
-        tmp_file.write_all(&bytes).await?;
-    }
-    tmp_file.flush().await?;
-
-    Ok(())
-}
 
 impl<T> ToSegmentData for T
 where
@@ -86,5 +39,53 @@ where
             let bytes = response.bytes().await?;
             Ok(bytes)
         }
+    }
+}
+
+impl<T> WriteSegment for T
+where
+    T: StreamingSegment + RemoteStreamingSegment + Sync,
+{
+    async fn write_segment<W>(&self, context: &IoriContext, writer: &mut W) -> IoriResult<()>
+    where
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
+        let bytes = self.to_segment_data(context.client.clone()).await?;
+
+        // TODO: use bytes_stream to improve performance
+        // .bytes_stream();
+        let decryptor = self.key().map(|key| {
+            key.to_decryptor(
+                self.format(),
+                context.shaka_packager_command.as_ref().to_owned(),
+            )
+        });
+        if let Some(decryptor) = decryptor {
+            let decrypted_bytes = match self.initial_segment() {
+                crate::InitialSegment::Encrypted(data) => {
+                    let mut result = data.to_vec();
+                    result.extend_from_slice(&bytes);
+                    decryptor.decrypt(&result).await?
+                }
+                crate::InitialSegment::Clear(data) => {
+                    writer.write_all(&data).await?;
+                    decryptor.decrypt(&bytes).await?
+                }
+                crate::InitialSegment::None => decryptor.decrypt(&bytes).await?,
+            };
+            writer.write_all(&decrypted_bytes).await?;
+        } else {
+            // If no key is provided, no matter whether the initial segment is encrypted or not,
+            // we should write the initial segment to the file.
+            if let InitialSegment::Clear(initial_segment)
+            | InitialSegment::Encrypted(initial_segment) = self.initial_segment()
+            {
+                writer.write_all(&initial_segment).await?;
+            }
+            writer.write_all(&bytes).await?;
+        }
+        writer.flush().await?;
+
+        Ok(())
     }
 }
