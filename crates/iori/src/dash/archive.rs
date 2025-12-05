@@ -7,6 +7,7 @@ use std::{
     },
 };
 
+use futures::{Stream, stream};
 use tokio::{io::AsyncWrite, sync::mpsc};
 use url::Url;
 
@@ -53,9 +54,9 @@ impl CommonDashArchiveSource {
 impl StreamingSource for CommonDashArchiveSource {
     type Segment = DashSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let (sender, receiver) = mpsc::unbounded_channel();
 
         let text = self
@@ -252,12 +253,14 @@ impl StreamingSource for CommonDashArchiveSource {
             }
         }
 
-        Ok(receiver)
+        Ok(Box::pin(stream::unfold(receiver, |mut receiver| async {
+            receiver.recv().await.map(|item| (item, receiver))
+        })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         fetch_segment(
             self.client.clone(),

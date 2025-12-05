@@ -2,6 +2,7 @@ use crate::{
     IoriError, SegmentInfo, StreamingSegment, StreamingSource, cache::CacheSource,
     download::DownloaderApp, error::IoriResult, merge::Merger,
 };
+use futures::StreamExt;
 use std::{future::Future, num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
@@ -93,9 +94,10 @@ where
     pub async fn download(self) -> IoriResult<M::Result> {
         self.app.on_start().await?;
 
-        let mut receiver = self.source.fetch_info().await?;
+        let stream = self.source.segments_stream().await?;
+        tokio::pin!(stream);
 
-        while let Some(segments) = receiver.recv().await {
+        while let Some(segments) = stream.next().await {
             // If the playlist is not available, the downloader will be stopped.
             if let Err(e) = segments {
                 tracing::error!("Failed to fetch segment list: {e}");
@@ -185,9 +187,6 @@ where
                 break;
             }
         }
-
-        // drop receiver to stop the source from fetching more segments
-        drop(receiver);
 
         // wait for all tasks to finish
         let _ = self

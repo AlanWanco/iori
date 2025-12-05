@@ -1,9 +1,9 @@
 use iori::{
-    HttpClient, IoriResult, StreamingSource,
+    HttpClient, IoriResult, Stream, StreamingSource,
     hls::{HlsLiveSource, segment::M3u8Segment},
 };
 use serde::{Deserialize, Serialize};
-use tokio::{io::AsyncWrite, sync::mpsc};
+use tokio::io::AsyncWrite;
 use url::Url;
 
 use crate::model::WatchResponse;
@@ -71,15 +71,15 @@ impl NicoTimeshiftSource {
 impl StreamingSource for NicoTimeshiftSource {
     type Segment = M3u8Segment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
-        self.inner.fetch_info().await
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
+        self.inner.segments_stream().await
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         self.inner.fetch_segment(segment, writer).await
     }

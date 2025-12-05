@@ -1,5 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use futures::{Stream, stream};
 use tokio::{
     io::AsyncWrite,
     sync::{Mutex, mpsc},
@@ -49,9 +50,9 @@ impl HlsLiveSource {
 impl StreamingSource for HlsLiveSource {
     type Segment = M3u8Segment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let mut latest_media_sequences =
             self.playlist.lock().await.load_streams(self.retry).await?;
 
@@ -126,12 +127,14 @@ impl StreamingSource for HlsLiveSource {
             }
         });
 
-        Ok(receiver)
+        Ok(Box::pin(stream::unfold(receiver, |mut receiver| async {
+            receiver.recv().await.map(|item| (item, receiver))
+        })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         fetch_segment(
             self.client.clone(),

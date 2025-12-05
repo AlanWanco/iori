@@ -1,6 +1,7 @@
+use futures::{Stream, stream};
 use reqwest::header::{ACCEPT, ACCEPT_RANGES, CONTENT_LENGTH, RANGE};
 use std::{fmt::Display, sync::Arc};
-use tokio::{io::AsyncWrite, sync::mpsc};
+use tokio::io::AsyncWrite;
 
 use crate::{
     HttpClient, IoriResult, SegmentFormat, StreamType, StreamingSegment, StreamingSource,
@@ -76,11 +77,9 @@ impl StreamingSegment for HttpSegment {
 impl StreamingSource for HttpFileSource {
     type Segment = HttpSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         // detect whether range is supported
         let response = self.client.get(self.url.as_str()).send().await?;
         let content_length = response
@@ -132,14 +131,12 @@ impl StreamingSource for HttpFileSource {
             }
         }
 
-        tx.send(Ok(segments)).unwrap();
-
-        Ok(rx)
+        Ok(Box::pin(stream::once(async move { Ok(segments) })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         use futures::stream::TryStreamExt;
 

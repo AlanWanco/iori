@@ -17,7 +17,7 @@ pub async fn fetch_segment<S, W>(
 ) -> IoriResult<()>
 where
     S: StreamingSegment + ToSegmentData,
-    W: AsyncWrite + Unpin + Send + Sync + 'static,
+    W: AsyncWrite + Unpin + Send,
 {
     let bytes = segment.to_segment_data(client).await?;
 

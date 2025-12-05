@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
-use tokio::{io::AsyncWrite, sync::mpsc};
+use futures::{Stream, stream};
+use tokio::io::AsyncWrite;
 
 use crate::{
     ByteRange, HttpClient, IoriResult, RemoteStreamingSegment, StreamType, StreamingSegment,
@@ -72,19 +73,17 @@ impl RawRemoteSegmentsSource {
 impl StreamingSource for RawRemoteSegmentsSource {
     type Segment = RawRemoteSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let segments = self.segments.lock().unwrap().drain(..).collect();
 
-        let (tx, rx) = mpsc::unbounded_channel();
-        tx.send(Ok(segments)).unwrap();
-        Ok(rx)
+        Ok(stream::once(async move { Ok(segments) }))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         fetch_segment(self.client.clone(), segment, writer, None).await
     }

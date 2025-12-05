@@ -4,6 +4,7 @@ mod timeline;
 
 use super::segment::DashSegment;
 use crate::{HttpClient, IoriResult, StreamingSource, decrypt::IoriKey, fetch::fetch_segment};
+use futures::{Stream, stream};
 use std::{
     sync::{
         Arc,
@@ -38,9 +39,9 @@ impl CommonDashLiveSource {
 impl StreamingSource for CommonDashLiveSource {
     type Segment = DashSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let (sender, receiver) = mpsc::unbounded_channel();
 
         let mpd = self
@@ -106,12 +107,14 @@ impl StreamingSource for CommonDashLiveSource {
             });
         }
 
-        Ok(receiver)
+        Ok(Box::pin(stream::unfold(receiver, |mut receiver| async {
+            receiver.recv().await.map(|item| (item, receiver))
+        })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
+        W: tokio::io::AsyncWrite + Unpin + Send,
     {
         fetch_segment(self.client.clone(), segment, writer, None).await
     }

@@ -1,9 +1,7 @@
 use std::{num::ParseIntError, path::PathBuf, str::FromStr, sync::Arc};
 
-use tokio::{
-    io::AsyncWrite,
-    sync::{Mutex, mpsc},
-};
+use futures::{Stream, stream};
+use tokio::{io::AsyncWrite, sync::Mutex};
 use url::Url;
 
 use crate::{
@@ -95,12 +93,10 @@ impl CommonM3u8ArchiveSource {
 impl StreamingSource for CommonM3u8ArchiveSource {
     type Segment = M3u8Segment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let latest_media_sequences = self.playlist.lock().await.load_streams(self.retry).await?;
-
-        let (sender, receiver) = mpsc::unbounded_channel();
 
         let (segments, _) = self
             .playlist
@@ -125,14 +121,12 @@ impl StreamingSource for CommonM3u8ArchiveSource {
             segment.sequence = seq as u64;
         }
 
-        let _ = sender.send(Ok(segments));
-
-        Ok(receiver)
+        Ok(Box::pin(stream::once(async move { Ok(segments) })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         fetch_segment(
             self.client.clone(),

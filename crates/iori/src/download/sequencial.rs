@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
@@ -32,9 +33,10 @@ where
     }
 
     pub async fn download(&mut self) -> IoriResult<()> {
-        let mut receiver = self.source.fetch_info().await?;
+        let stream = self.source.segments_stream().await?;
+        tokio::pin!(stream);
 
-        while let Some(segment) = receiver.recv().await {
+        while let Some(segment) = stream.next().await {
             for segment in segment? {
                 let segment_info = SegmentInfo::from(&segment);
                 let writer = self.cache.open_writer(&segment_info).await?;

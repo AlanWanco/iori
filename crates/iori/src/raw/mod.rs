@@ -1,11 +1,7 @@
-use std::{borrow::Cow, path::PathBuf};
-
-use tokio::{
-    io::{AsyncWrite, AsyncWriteExt},
-    sync::mpsc,
-};
-
 use crate::{IoriResult, StreamingSegment, StreamingSource};
+use futures::{Stream, stream};
+use std::{borrow::Cow, path::PathBuf};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 mod http;
 pub use http::*;
@@ -75,21 +71,17 @@ impl StreamingSegment for RawSegment {
 impl StreamingSource for RawDataSource {
     type Segment = RawSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        tx.send(Ok(vec![RawSegment::new(
-            self.data.clone(),
-            self.ext.clone(),
-        )]))
-        .unwrap();
-        Ok(rx)
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
+        Ok(Box::pin(stream::once(async move {
+            Ok(vec![RawSegment::new(self.data.clone(), self.ext.clone())])
+        })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: AsyncWrite + Unpin + Send + Sync + 'static,
+        W: AsyncWrite + Unpin + Send,
     {
         writer.write_all(segment.data.as_bytes()).await?;
         Ok(())

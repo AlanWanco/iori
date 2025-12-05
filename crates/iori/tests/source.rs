@@ -1,4 +1,5 @@
 use futures::executor::block_on;
+use futures::{Stream, StreamExt, stream};
 use iori::{
     InitialSegment, IoriError, IoriResult, SegmentFormat, StreamType, StreamingSegment,
     StreamingSource,
@@ -6,7 +7,6 @@ use iori::{
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
 
 #[derive(Clone)]
 pub struct TestSegment {
@@ -19,7 +19,7 @@ pub struct TestSegment {
 impl TestSegment {
     async fn write_data<W>(&self, writer: &mut W) -> IoriResult<()>
     where
-        W: tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
+        W: tokio::io::AsyncWrite + Unpin + Send,
     {
         if self.fail_count.load(Ordering::Relaxed) > 0 {
             self.fail_count.fetch_sub(1, Ordering::Relaxed);
@@ -78,24 +78,22 @@ impl TestSource {
 impl StreamingSource for TestSource {
     type Segment = TestSegment;
 
-    async fn fetch_info(
+    async fn segments_stream(
         &self,
-    ) -> IoriResult<mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        tx.send(Ok(self.segments.clone())).unwrap();
-        Ok(rx)
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
+        Ok(Box::pin(stream::once(async { Ok(self.segments.clone()) })))
     }
 
     async fn fetch_segment<W>(&self, segment: &Self::Segment, writer: &mut W) -> IoriResult<()>
     where
-        W: tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
+        W: tokio::io::AsyncWrite + Unpin + Send,
     {
         segment.write_data(writer).await
     }
 }
 
-#[test]
-fn test_streaming_source_implementation() {
+#[tokio::test]
+async fn test_streaming_source_implementation() {
     let segments = vec![
         TestSegment {
             stream_id: 1,
@@ -112,15 +110,15 @@ fn test_streaming_source_implementation() {
     ];
 
     let source = TestSource::new(segments.clone());
-    let mut rx = block_on(source.fetch_info()).unwrap();
+    let mut stream = source
+        .segments_stream()
+        .await
+        .expect("Failed to get segments stream");
 
-    let received_segments: Vec<TestSegment> = block_on(async {
-        let mut all_segments = Vec::new();
-        while let Some(result) = rx.recv().await {
-            all_segments.extend(result.unwrap());
-        }
-        all_segments
-    });
+    let mut received_segments: Vec<TestSegment> = Vec::new();
+    while let Some(result) = stream.next().await {
+        received_segments.extend(result.unwrap());
+    }
 
     assert_eq!(received_segments.len(), segments.len());
     for (received, expected) in received_segments.iter().zip(segments.iter()) {

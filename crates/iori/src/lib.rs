@@ -10,6 +10,7 @@ pub mod hls;
 
 pub(crate) mod util;
 pub use crate::util::http::HttpClient;
+pub use futures::Stream;
 pub use reqwest;
 pub mod utils {
     pub use crate::util::detect_manifest_type;
@@ -48,13 +49,9 @@ pub use util::range::ByteRange;
 pub trait StreamingSource {
     type Segment: StreamingSegment + Send + 'static;
 
-    fn fetch_info(
+    fn segments_stream(
         &self,
-    ) -> impl Future<
-        Output = error::IoriResult<
-            tokio::sync::mpsc::UnboundedReceiver<IoriResult<Vec<Self::Segment>>>,
-        >,
-    > + Send;
+    ) -> impl Future<Output = IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>>>;
 
     fn fetch_segment<W>(
         &self,
@@ -62,7 +59,7 @@ pub trait StreamingSource {
         writer: &mut W,
     ) -> impl Future<Output = IoriResult<()>> + Send
     where
-        W: tokio::io::AsyncWrite + Unpin + Send + Sync + 'static;
+        W: tokio::io::AsyncWrite + Unpin + Send;
 }
 
 pub trait StreamingSegment {
