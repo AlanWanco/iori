@@ -190,12 +190,15 @@ async fn record_room(
         Some("application/octet-stream".to_string()),
     );
     let merger = IoriMerger::skip();
-    let result = ParallelDownloader::builder(IoriContext::new(client, None))
-        .cache(cache)
-        .merger(merger)
-        .ctrlc_handler()
-        .download(source)
-        .await;
+    let result = ParallelDownloader::builder(IoriContext {
+        client,
+        ..Default::default()
+    })
+    .cache(cache)
+    .merger(merger)
+    .ctrlc_handler()
+    .download(source)
+    .await;
 
     Ok(result?)
 }

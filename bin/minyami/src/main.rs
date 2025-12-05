@@ -279,15 +279,20 @@ impl MinyamiArgs {
     where
         S: StreamingSource + Send + Sync + 'static,
     {
-        ParallelDownloader::builder(IoriContext::new(client, self.shaka_packager.clone()))
-            .app(TracingApp::concurrent(self.threads))
-            .cache(cache)
-            .merger(self.merger())
-            .concurrency(self.threads)
-            .retries(self.retries)
-            .ctrlc_handler()
-            .download(source)
-            .await?;
+        ParallelDownloader::builder(IoriContext {
+            client,
+            shaka_packager_command: self.shaka_packager.clone().into(),
+            manifest_retries: self.manifest_retries,
+            segment_retries: self.retries,
+        })
+        .app(TracingApp::concurrent(self.threads))
+        .cache(cache)
+        .merger(self.merger())
+        .concurrency(self.threads)
+        .retries(self.retries)
+        .ctrlc_handler()
+        .download(source)
+        .await?;
         Ok(())
     }
 
@@ -322,9 +327,7 @@ impl MinyamiArgs {
                 )
             };
 
-            let source = NicoTimeshiftSource::new(client.clone(), wss_url, quality, false)
-                .await?
-                .with_retry(self.manifest_retries);
+            let source = NicoTimeshiftSource::new(client.clone(), wss_url, quality, false).await?;
             self.download(client, source, cache).await?;
             return Ok(());
         }
@@ -339,8 +342,7 @@ impl MinyamiArgs {
             }
             // HLS Live
             (false, true) => {
-                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())
-                    .with_retry(self.manifest_retries);
+                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref());
                 self.download(client, source, cache).await?;
             }
             // HLS Archive
@@ -349,8 +351,7 @@ impl MinyamiArgs {
                     self.m3u8.clone(),
                     self.key.as_deref(),
                     self.range,
-                )
-                .with_retry(self.manifest_retries);
+                )?;
                 self.download(client, source, cache).await?;
             }
         }

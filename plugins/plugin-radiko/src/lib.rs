@@ -4,6 +4,7 @@ use iori_radiko::{RadikoClient, RadikoTime};
 use shiori_plugin::{
     iori::{
         HttpClient, StreamType,
+        context::IoriContext,
         hls::HlsPlaylistSource,
         raw::RawRemoteSegment,
         reqwest::{Client, header::HeaderMap},
@@ -172,12 +173,17 @@ impl Inspect for RadikoTimefreeInspector {
                 return Ok(InspectResult::None);
             }
 
+            let context = IoriContext {
+                client: http_client.clone(),
+                ..Default::default()
+            };
+
             // Use the first available stream URL
             let stream = &stream_urls[0];
             let mut source = HlsPlaylistSource::new(stream.url.clone(), None);
-            let latest_media_sequences = source.load_streams(&http_client, 3).await?;
+            let latest_media_sequences = source.load_streams(&context).await?;
             let (segments, _) = source
-                .load_segments(&http_client, &latest_media_sequences, 3)
+                .load_segments(&context, &latest_media_sequences)
                 .await?;
 
             for segment in segments.into_iter().flatten() {

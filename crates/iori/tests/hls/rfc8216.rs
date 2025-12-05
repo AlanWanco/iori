@@ -1,17 +1,17 @@
 use crate::hls::{HlsMock, setup_mock_server};
-use iori::{HttpClient, hls::HlsPlaylistSource};
+use iori::{context::IoriContext, hls::HlsPlaylistSource};
 
 #[tokio::test]
 async fn rfc8216_8_1_simple_media_playlist() -> anyhow::Result<()> {
     let data = include_str!("../fixtures/hls/rfc8216/8-1-simple-media-playlist.m3u8");
     let (uri, _server) = setup_mock_server(data).await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(is_end);
@@ -45,12 +45,12 @@ async fn rfc8216_8_2_live_media_playlist_using_https() -> anyhow::Result<()> {
     let data = include_str!("../fixtures/hls/rfc8216/8-2-live-media-playlist-using-https.m3u8");
     let (uri, _server) = setup_mock_server(data).await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(!is_end);
@@ -89,15 +89,15 @@ async fn rfc8216_8_3_playlist_with_encrypted_media_segments() -> anyhow::Result<
         include_str!("../fixtures/hls/rfc8216/8-3-playlist-with-encrypted-media-segments.m3u8");
     let (uri, _server) = setup_mock_server(data).await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(
         uri.parse()?,
         Some("1234567890abcdef1234567890abcdef"), // mocked key
     );
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(!is_end);
@@ -156,12 +156,12 @@ async fn rfc8216_8_4_master_playlist() -> anyhow::Result<()> {
         .mock_playlist("/audio-only.m3u8", "http://media.example.com/audio-only.ts")
         .await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(is_end);
@@ -213,12 +213,12 @@ async fn rfc8216_8_6_master_playlist_with_alternative_audio() -> anyhow::Result<
         )
         .await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(is_end);
@@ -254,12 +254,12 @@ async fn rfc8216_8_7_master_playlist_with_alternative_video() -> anyhow::Result<
         )
         .await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(is_end);

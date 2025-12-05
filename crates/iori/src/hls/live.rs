@@ -13,7 +13,6 @@ use crate::{
 
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
-    retry: u32,
 }
 
 impl HlsLiveSource {
@@ -23,13 +22,7 @@ impl HlsLiveSource {
                 Url::parse(&m3u8_url).unwrap(),
                 key,
             ))),
-            retry: 3,
         }
-    }
-
-    pub fn with_retry(mut self, retry: u32) -> Self {
-        self.retry = retry;
-        self
     }
 }
 
@@ -40,18 +33,12 @@ impl StreamingSource for HlsLiveSource {
         &self,
         context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        let mut latest_media_sequences = self
-            .playlist
-            .lock()
-            .await
-            .load_streams(&context.client, self.retry)
-            .await?;
+        let mut latest_media_sequences = self.playlist.lock().await.load_streams(context).await?;
 
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let retry = self.retry;
         let playlist = self.playlist.clone();
-        let client = context.client.clone();
+        let context = context.clone();
         tokio::spawn(async move {
             loop {
                 if sender.is_closed() {
@@ -62,7 +49,7 @@ impl StreamingSource for HlsLiveSource {
                 let (segments, is_end) = match playlist
                     .lock()
                     .await
-                    .load_segments(&client, &latest_media_sequences, retry)
+                    .load_segments(&context, &latest_media_sequences)
                     .await
                 {
                     Ok(v) => v,

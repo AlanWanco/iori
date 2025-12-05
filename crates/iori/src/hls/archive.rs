@@ -14,7 +14,6 @@ use crate::{
 pub struct CommonM3u8ArchiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
     range: SegmentRange,
-    retry: u32,
 }
 
 /// A subrange for m3u8 archive sources to choose which segment to use
@@ -61,20 +60,14 @@ impl FromStr for SegmentRange {
 }
 
 impl CommonM3u8ArchiveSource {
-    pub fn new(playlist_url: String, key: Option<&str>, range: SegmentRange) -> Self {
-        Self {
+    pub fn new(playlist_url: String, key: Option<&str>, range: SegmentRange) -> IoriResult<Self> {
+        Ok(Self {
             playlist: Arc::new(Mutex::new(HlsPlaylistSource::new(
-                Url::parse(&playlist_url).unwrap(),
+                Url::parse(&playlist_url)?,
                 key,
             ))),
             range,
-            retry: 3,
-        }
-    }
-
-    pub fn with_retry(mut self, retry: u32) -> Self {
-        self.retry = retry;
-        self
+        })
     }
 }
 
@@ -85,18 +78,13 @@ impl StreamingSource for CommonM3u8ArchiveSource {
         &self,
         context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        let latest_media_sequences = self
-            .playlist
-            .lock()
-            .await
-            .load_streams(&context.client, self.retry)
-            .await?;
+        let latest_media_sequences = self.playlist.lock().await.load_streams(context).await?;
 
         let (segments, _) = self
             .playlist
             .lock()
             .await
-            .load_segments(&context.client, &latest_media_sequences, self.retry)
+            .load_segments(context, &latest_media_sequences)
             .await?;
         let mut segments: Vec<_> = segments
             .into_iter()

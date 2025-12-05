@@ -1,5 +1,5 @@
 use m3u8_rs::{MediaPlaylist, Playlist};
-use reqwest::{Client, Url};
+use reqwest::Url;
 
 use crate::{
     error::{IoriError, IoriResult},
@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub async fn load_playlist_with_retry(
-    client: &Client,
+    client: &HttpClient,
     url: &Url,
     total_retry: u32,
 ) -> IoriResult<Playlist> {

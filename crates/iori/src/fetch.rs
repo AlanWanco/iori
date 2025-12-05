@@ -2,25 +2,31 @@ use reqwest::header::RANGE;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    InitialSegment, RemoteStreamingSegment, StreamingSegment, ToSegmentData, WriteSegment,
+    InitialSegment, RemoteStreamingSegment, StreamingSegment, WriteSegment,
     context::IoriContext,
     error::{IoriError, IoriResult},
-    util::http::HttpClient,
 };
 
-impl<T> ToSegmentData for T
+pub trait SegmentToBytes {
+    fn to_bytes(
+        &self,
+        context: &IoriContext,
+    ) -> impl Future<Output = IoriResult<bytes::Bytes>> + Send;
+}
+
+impl<T> SegmentToBytes for T
 where
     T: RemoteStreamingSegment,
 {
-    fn to_segment_data(
+    fn to_bytes(
         &self,
-        client: HttpClient,
+        context: &IoriContext,
     ) -> impl Future<Output = IoriResult<bytes::Bytes>> + Send {
         let url = self.url();
         let byte_range = self.byte_range();
         let headers = self.headers();
         async move {
-            let mut request = client.get(url);
+            let mut request = context.client.get(url);
             if let Some(headers) = headers {
                 request = request.headers(headers);
             }
@@ -44,13 +50,13 @@ where
 
 impl<T> WriteSegment for T
 where
-    T: StreamingSegment + RemoteStreamingSegment + Sync,
+    T: StreamingSegment + SegmentToBytes + Sync,
 {
     async fn write_segment<W>(&self, context: &IoriContext, writer: &mut W) -> IoriResult<()>
     where
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
-        let bytes = self.to_segment_data(context.client.clone()).await?;
+        let bytes = self.to_bytes(context).await?;
 
         // TODO: use bytes_stream to improve performance
         // .bytes_stream();

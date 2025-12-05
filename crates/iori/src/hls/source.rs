@@ -11,11 +11,11 @@ use m3u8_rs::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
 use reqwest::Url;
 
 use crate::{
-    InitialSegment, SegmentFormat, StreamType,
+    HttpClient, InitialSegment, SegmentFormat, StreamType,
+    context::IoriContext,
     decrypt::IoriKey,
     error::IoriResult,
     hls::{segment::M3u8Segment, utils::load_m3u8},
-    util::http::HttpClient,
 };
 
 use super::utils::load_playlist_with_retry;
@@ -70,15 +70,19 @@ impl HlsMediaPlaylistSource {
 
     pub async fn load_segments(
         &mut self,
-        client: &HttpClient,
+        context: &IoriContext,
         latest_media_sequence: &Option<u64>,
-        retry: u32,
     ) -> IoriResult<(Vec<M3u8Segment>, Url, MediaPlaylist)> {
         let (playlist_url, playlist) = if let Some(initial_playlist) = self.initial_playlist.take()
         {
             (Url::from_str(&self.url)?, initial_playlist)
         } else {
-            load_m3u8(client, Url::from_str(&self.url)?, retry).await?
+            load_m3u8(
+                &context.client,
+                Url::from_str(&self.url)?,
+                context.manifest_retries,
+            )
+            .await?
         };
 
         let mut key = None;
@@ -88,7 +92,7 @@ impl HlsMediaPlaylistSource {
         for (i, segment) in playlist.segments.iter().enumerate() {
             if let Some(k) = &segment.key {
                 key = IoriKey::from_key(
-                    client,
+                    &context.client,
                     k,
                     &playlist_url,
                     playlist.media_sequence,
@@ -101,11 +105,11 @@ impl HlsMediaPlaylistSource {
             if let Some(m) = &segment.map {
                 let url = playlist_url.join(&m.uri)?;
 
-                let mut retries = retry;
+                let mut retries = context.segment_retries;
                 loop {
                     retries -= 1;
 
-                    match self.load_bytes(client, url.clone()).await {
+                    match self.load_bytes(&context.client, url.clone()).await {
                         Ok(bytes) => {
                             initial_segment = if m.after_key {
                                 InitialSegment::Encrypted(Arc::new(bytes))
@@ -217,12 +221,9 @@ impl HlsPlaylistSource {
         }
     }
 
-    pub async fn load_streams(
-        &mut self,
-        client: &HttpClient,
-        retry: u32,
-    ) -> IoriResult<Vec<Option<u64>>> {
-        let playlist = load_playlist_with_retry(client, &self.url, retry).await?;
+    pub async fn load_streams(&mut self, context: &IoriContext) -> IoriResult<Vec<Option<u64>>> {
+        let playlist =
+            load_playlist_with_retry(&context.client, &self.url, context.manifest_retries).await?;
 
         match playlist {
             Playlist::MasterPlaylist(mut pl) => {
@@ -325,16 +326,14 @@ impl HlsPlaylistSource {
 
     pub async fn load_segments(
         &mut self,
-        client: &HttpClient,
+        context: &IoriContext,
         latest_media_sequences: &[Option<u64>],
-        retry: u32,
     ) -> IoriResult<(Vec<Vec<M3u8Segment>>, bool /* is_end */)> {
         let mut segments = Vec::new();
         let mut is_end = true;
         for (stream, latest_media_sequence) in self.streams.iter_mut().zip(latest_media_sequences) {
-            let (stream_segments, _, stream_playlist) = stream
-                .load_segments(client, latest_media_sequence, retry)
-                .await?;
+            let (stream_segments, _, stream_playlist) =
+                stream.load_segments(context, latest_media_sequence).await?;
             segments.push(stream_segments);
             if !stream_playlist.end_list {
                 is_end = false;

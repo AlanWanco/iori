@@ -1,6 +1,6 @@
 // crates/iori/tests/fixtures/hls/m3u8-rs/media-playlist-with-byterange.m3u8
 
-use iori::{ByteRange, HttpClient, hls::HlsPlaylistSource};
+use iori::{ByteRange, context::IoriContext, hls::HlsPlaylistSource};
 
 use crate::hls::setup_mock_server;
 
@@ -9,12 +9,12 @@ async fn media_playlist_with_byterange() -> anyhow::Result<()> {
     let data = include_str!("../fixtures/hls/m3u8-rs/media-playlist-with-byterange.m3u8");
     let (playlist_uri, server) = setup_mock_server(data).await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(playlist_uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(!is_end);
@@ -49,12 +49,12 @@ async fn mediaplaylist_byterange() -> anyhow::Result<()> {
     let data = include_str!("../fixtures/hls/m3u8-rs/mediaplaylist-byterange.m3u8");
     let (playlist_uri, server) = setup_mock_server(data).await;
 
-    let client = HttpClient::default();
+    let context = IoriContext::default();
     let mut playlist = HlsPlaylistSource::new(playlist_uri.parse()?, None);
 
-    let latest_media_sequences = playlist.load_streams(&client, 1).await?;
+    let latest_media_sequences = playlist.load_streams(&context).await?;
     let (streams, is_end) = playlist
-        .load_segments(&client, &latest_media_sequences, 1)
+        .load_segments(&context, &latest_media_sequences)
         .await?;
 
     assert!(is_end);

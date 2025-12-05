@@ -16,7 +16,6 @@ pub struct NicoTimeshiftSegmentInfo {
 
 pub struct NicoTimeshiftSource {
     inner: HlsLiveSource,
-    retry: u32,
 }
 
 impl NicoTimeshiftSource {
@@ -58,13 +57,7 @@ impl NicoTimeshiftSource {
 
         Ok(Self {
             inner: HlsLiveSource::new(stream.uri, None),
-            retry: 3,
         })
-    }
-
-    pub fn with_retry(mut self, retry: u32) -> Self {
-        self.retry = retry;
-        self
     }
 }
 

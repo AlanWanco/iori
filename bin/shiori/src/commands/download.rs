@@ -81,7 +81,12 @@ where
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
         let client = self.http.into_client(&self.url);
-        let context = IoriContext::new(client.clone(), self.decrypt.shaka_packager_command.clone());
+        let context = IoriContext {
+            client: client.clone(),
+            shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
+            manifest_retries: self.download.manifest_retries,
+            segment_retries: self.download.segment_retries,
+        };
 
         let playlist_type = match self.extra.playlist_type {
             Some(ty) => ty,
@@ -112,8 +117,7 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())
-                    .with_retry(self.download.manifest_retries);
+                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref());
                 downloader.download(source).await?;
             }
             PlaylistType::DASH => {
