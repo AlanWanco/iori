@@ -4,11 +4,11 @@ use std::{
     fs::File,
     io::{Cursor, Read, Write},
     path::PathBuf,
-    process::Command,
 };
 
 use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
 use m3u8_rs::KeyMethod;
+use tokio::process::Command;
 
 use crate::{
     SegmentFormat,
@@ -206,8 +206,12 @@ pub enum IoriDecryptor {
 impl IoriDecryptor {
     pub async fn decrypt(self, data: &[u8]) -> IoriResult<Vec<u8>> {
         Ok(match self {
-            IoriDecryptor::Aes128(decryptor) => decryptor.decrypt_padded_vec_mut::<Pkcs7>(data)?,
-            IoriDecryptor::Mp4Decrypt { keys } => mp4decrypt::mp4decrypt(data, &keys, None)?,
+            IoriDecryptor::Aes128(decryptor) => {
+                tokio::task::block_in_place(|| decryptor.decrypt_padded_vec_mut::<Pkcs7>(data))?
+            }
+            IoriDecryptor::Mp4Decrypt { keys } => {
+                tokio::task::block_in_place(|| mp4decrypt::mp4decrypt(data, &keys, None))?
+            }
             IoriDecryptor::ShakaPackager { command, keys } => {
                 let temp_dir = tempfile::tempdir()?;
                 let rand_suffix = rand::random::<u64>();
@@ -246,7 +250,7 @@ impl IoriDecryptor {
                     command.arg("--keys").arg(arg);
                 }
 
-                command.spawn()?.wait()?;
+                command.spawn()?.wait().await?;
 
                 let mut file = File::open(temp_output_file)?;
                 let mut data = Vec::new();
@@ -256,7 +260,9 @@ impl IoriDecryptor {
             IoriDecryptor::SampleAes { key, iv } => {
                 let mut reader = Cursor::new(data);
                 let mut writer = Vec::new();
-                iori_ssa::decrypt(&mut reader, &mut writer, key, iv).map(|_| writer)?
+                tokio::task::block_in_place(|| {
+                    iori_ssa::decrypt(&mut reader, &mut writer, key, iv).map(|_| writer)
+                })?
             }
         })
     }
