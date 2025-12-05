@@ -16,13 +16,13 @@ pub struct HlsLiveSource {
 }
 
 impl HlsLiveSource {
-    pub fn new(m3u8_url: String, key: Option<&str>) -> Self {
-        Self {
+    pub fn new(m3u8_url: String, key: Option<&str>) -> IoriResult<Self> {
+        Ok(Self {
             playlist: Arc::new(Mutex::new(HlsPlaylistSource::new(
-                Url::parse(&m3u8_url).unwrap(),
+                Url::parse(&m3u8_url)?,
                 key,
             ))),
-        }
+        })
     }
 }
 

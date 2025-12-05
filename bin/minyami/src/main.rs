@@ -342,7 +342,7 @@ impl MinyamiArgs {
             }
             // HLS Live
             (false, true) => {
-                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref());
+                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
                 self.download(client, source, cache).await?;
             }
             // HLS Archive

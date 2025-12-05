@@ -202,7 +202,7 @@ impl MPDTimeline {
                             .unwrap_or_default();
                         let mut number = *start_number;
 
-                        let mut initial_segment = None;
+                        let initial_segment = None;
 
                         for timeline_segment in timeline_segments {
                             if let Some(time) = timeline_segment.time {
@@ -259,18 +259,6 @@ impl MPDTimeline {
                                     ))
                                     .to_string();
 
-                                if initial_segment.is_none() {
-                                    if let Some(initialization) = initialization {
-                                        let url = initialization.resolve(&template);
-                                        let data = client.get(url).send().await?.bytes().await?;
-                                        initial_segment = Some(InitialSegment::Encrypted(
-                                            Arc::new(data.to_vec()),
-                                        ));
-                                    } else {
-                                        initial_segment = Some(InitialSegment::None);
-                                    }
-                                }
-
                                 segments.push(DashSegment {
                                     url: segment_url,
                                     filename: segment_filename,
@@ -278,7 +266,17 @@ impl MPDTimeline {
                                         || StreamType::from_mime_type(mime_type.as_deref()),
                                         |r| r.to_segment_type(),
                                     ),
-                                    initial_segment: initial_segment.clone().unwrap(),
+                                    initial_segment: if let Some(initial_segment) =
+                                        initial_segment.clone()
+                                    {
+                                        initial_segment
+                                    } else if let Some(initialization) = initialization {
+                                        let url = initialization.resolve(&template);
+                                        let data = client.get(url).send().await?.bytes().await?;
+                                        InitialSegment::Encrypted(Arc::new(data.to_vec()))
+                                    } else {
+                                        InitialSegment::None
+                                    },
                                     key: key.clone(),
                                     byte_range: None,
                                     sequence: 0,

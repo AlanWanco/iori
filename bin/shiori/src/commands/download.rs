@@ -117,7 +117,7 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref());
+                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
                 downloader.download(source).await?;
             }
             PlaylistType::DASH => {

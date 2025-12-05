@@ -14,9 +14,7 @@ pub struct NicoTimeshiftSegmentInfo {
     file_name: String,
 }
 
-pub struct NicoTimeshiftSource {
-    inner: HlsLiveSource,
-}
+pub struct NicoTimeshiftSource(HlsLiveSource);
 
 impl NicoTimeshiftSource {
     pub async fn new(
@@ -55,9 +53,7 @@ impl NicoTimeshiftSource {
             log::info!("watcher disconnected");
         });
 
-        Ok(Self {
-            inner: HlsLiveSource::new(stream.uri, None),
-        })
+        Ok(Self(HlsLiveSource::new(stream.uri, None)?))
     }
 }
 
@@ -68,6 +64,6 @@ impl StreamingSource for NicoTimeshiftSource {
         &self,
         context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        self.inner.segments_stream(context).await
+        self.0.segments_stream(context).await
     }
 }

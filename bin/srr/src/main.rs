@@ -182,7 +182,7 @@ async fn record_room(
     log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
 
     let client = HttpClient::default();
-    let source = HlsLiveSource::new(stream.url.clone(), None);
+    let source = HlsLiveSource::new(stream.url.clone(), None)?;
     let cache = IoriCache::opendal(
         operator.clone(),
         prefix.clone(),
