@@ -14,7 +14,7 @@ use iori::{
     HttpClient, StreamingSource,
     cache::IoriCache,
     context::IoriContext,
-    dash::archive::CommonDashArchiveSource,
+    dash::live::CommonDashLiveSource,
     download::{ParallelDownloader, TracingApp},
     hls::{CommonM3u8ArchiveSource, HlsLiveSource, SegmentRange},
     merge::IoriMerger,
@@ -333,11 +333,9 @@ impl MinyamiArgs {
         }
 
         match (self.dash, self.live) {
-            // DASH Live
-            (true, true) => unimplemented!(),
-            // DASH Archive
-            (true, false) => {
-                let source = CommonDashArchiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
+            // DASH Live / Archive
+            (true, _) => {
+                let source = CommonDashLiveSource::new(self.m3u8.parse()?, self.key.as_deref())?;
                 self.download(client, source, cache).await?;
             }
             // HLS Live
