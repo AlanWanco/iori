@@ -194,6 +194,7 @@ async fn record_room(
         client,
         ..Default::default()
     })
+    .app(())
     .cache(cache)
     .merger(merger)
     .ctrlc_handler()

@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let merger = SkipMerger;
 
     let downloader = ParallelDownloader::builder(Default::default())
+        .app(())
         .cache(cache)
         .merger(merger)
         .ctrlc_handler();

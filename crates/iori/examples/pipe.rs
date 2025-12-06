@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let cache = FileCacheSource::new(output_dir)?;
 
     ParallelDownloader::builder(Default::default())
+        .app(())
         .cache(cache)
         .merger(merger)
         .concurrency(NonZeroU32::new(8).unwrap())

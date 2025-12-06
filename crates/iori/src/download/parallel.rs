@@ -1,10 +1,12 @@
 use crate::WriteSegment;
 use crate::context::IoriContext;
+use crate::util::{Set, Unset};
 use crate::{
     IoriError, SegmentInfo, StreamingSegment, StreamingSource, cache::CacheSource,
     download::DownloaderApp, error::IoriResult, merge::Merger,
 };
 use futures::StreamExt;
+use std::marker::PhantomData;
 use std::{num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
@@ -33,12 +35,7 @@ pub fn spawn_ctrlc_handler() -> oneshot::Receiver<()> {
     receiver
 }
 
-pub struct ParallelDownloader<S, M, C, A>
-where
-    M: Merger,
-    C: CacheSource,
-    A: DownloaderApp,
-{
+pub struct ParallelDownloader<S = (), M = (), C = (), A = ()> {
     context: IoriContext,
 
     source: Arc<S>,
@@ -54,12 +51,8 @@ where
     stop_signal: oneshot::Receiver<()>,
 }
 
-impl<M, C> ParallelDownloader<(), M, C, ()>
-where
-    M: Merger + Send + Sync + 'static,
-    C: CacheSource + Send + Sync + 'static,
-{
-    pub fn builder(context: IoriContext) -> ParallelDownloaderBuilder<M, C, M::Result, ()> {
+impl ParallelDownloader {
+    pub fn builder(context: IoriContext) -> ParallelDownloaderBuilder {
         ParallelDownloaderBuilder::new(context)
     }
 }
@@ -71,32 +64,6 @@ where
     C: CacheSource + Send + Sync + 'static,
     A: DownloaderApp + Send + Sync + 'static,
 {
-    pub(crate) fn new(
-        context: IoriContext,
-        app: A,
-        source: S,
-        merger: M,
-        cache: C,
-        concurrency: NonZeroU32,
-        retries: u32,
-        stop_signal: oneshot::Receiver<()>,
-    ) -> Self {
-        let permits = Arc::new(Semaphore::new(concurrency.get() as usize));
-
-        Self {
-            context,
-            app: Arc::new(app),
-            source: Arc::new(source),
-            merger: Arc::new(Mutex::new(merger)),
-            cache: Arc::new(cache),
-            concurrency,
-            permits,
-
-            retries,
-            stop_signal,
-        }
-    }
-
     pub async fn download(self) -> IoriResult<M::Result> {
         self.app.on_start().await?;
 
@@ -207,7 +174,15 @@ where
     }
 }
 
-pub struct ParallelDownloaderBuilder<M, C, MR, A> {
+pub struct ParallelDownloaderBuilder<
+    M = (),
+    C = (),
+    MR = (),
+    A = (),
+    MergerSet = Unset,
+    CacheSet = Unset,
+    AppSet = Unset,
+> {
     context: IoriContext,
 
     concurrency: NonZeroU32,
@@ -217,16 +192,18 @@ pub struct ParallelDownloaderBuilder<M, C, MR, A> {
     stop_signal: Option<oneshot::Receiver<()>>,
     app: Option<A>,
 
-    _merge_result: std::marker::PhantomData<MR>,
+    _merge_result: PhantomData<MR>,
+    _set: (
+        PhantomData<MergerSet>,
+        PhantomData<CacheSet>,
+        PhantomData<AppSet>,
+    ),
 }
 
-impl<M, C, MR, A> ParallelDownloaderBuilder<M, C, MR, A>
-where
-    M: Merger<Result = MR> + Send + Sync + 'static,
-    C: CacheSource,
-    A: DownloaderApp + Send + Sync + 'static,
+impl<M, C, MR, A, MergerSet, CacheSet, AppSet>
+    ParallelDownloaderBuilder<M, C, MR, A, MergerSet, CacheSet, AppSet>
 {
-    pub fn new(context: IoriContext) -> Self {
+    fn new(context: IoriContext) -> Self {
         Self {
             context,
             concurrency: NonZeroU32::new(5).unwrap(),
@@ -236,6 +213,7 @@ where
             stop_signal: None,
             app: None,
             _merge_result: Default::default(),
+            _set: Default::default(),
         }
     }
 
@@ -249,16 +227,6 @@ where
         self
     }
 
-    pub fn merger(mut self, merger: M) -> Self {
-        self.merger = Some(merger);
-        self
-    }
-
-    pub fn cache(mut self, cache: C) -> Self {
-        self.cache = Some(cache);
-        self
-    }
-
     pub fn stop_signal(mut self, stop_signal: oneshot::Receiver<()>) -> Self {
         self.stop_signal = Some(stop_signal);
         self
@@ -269,36 +237,94 @@ where
         self
     }
 
-    pub fn app<AA>(self, app: AA) -> ParallelDownloaderBuilder<M, C, MR, AA>
+    pub fn merger<MM>(
+        self,
+        merger: MM,
+    ) -> ParallelDownloaderBuilder<MM, C, MR, A, Set, CacheSet, AppSet>
+    where
+        MM: Merger<Result = MR> + Send + Sync + 'static,
+    {
+        ParallelDownloaderBuilder {
+            context: self.context,
+            concurrency: self.concurrency,
+            retries: self.retries,
+            merger: Some(merger),
+            cache: self.cache,
+            stop_signal: self.stop_signal,
+            app: self.app,
+            _merge_result: Default::default(),
+            _set: Default::default(),
+        }
+    }
+
+    pub fn cache<CC>(
+        self,
+        cache: CC,
+    ) -> ParallelDownloaderBuilder<M, CC, MR, A, MergerSet, Set, AppSet>
+    where
+        CC: CacheSource,
+    {
+        ParallelDownloaderBuilder {
+            context: self.context,
+            concurrency: self.concurrency,
+            retries: self.retries,
+            merger: self.merger,
+            cache: Some(cache),
+            stop_signal: self.stop_signal,
+            app: self.app,
+            _merge_result: Default::default(),
+            _set: Default::default(),
+        }
+    }
+
+    pub fn app<AA>(
+        self,
+        app: AA,
+    ) -> ParallelDownloaderBuilder<M, C, MR, AA, MergerSet, CacheSet, Set>
     where
         AA: DownloaderApp + Send + Sync + 'static,
     {
-        ParallelDownloaderBuilder::<M, C, MR, AA> {
+        ParallelDownloaderBuilder {
             context: self.context,
-            app: Some(app),
             concurrency: self.concurrency,
             retries: self.retries,
             merger: self.merger,
             cache: self.cache,
             stop_signal: self.stop_signal,
-            _merge_result: std::marker::PhantomData,
+            app: Some(app),
+            _merge_result: Default::default(),
+            _set: Default::default(),
         }
     }
+}
 
+impl<M, C, MR, A, MS, CS, AS> Default for ParallelDownloaderBuilder<M, C, MR, A, MS, CS, AS> {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
+impl<M, C, MR, A> ParallelDownloaderBuilder<M, C, MR, A, Set, Set, Set>
+where
+    M: Merger<Result = MR> + Send + Sync + 'static,
+    C: CacheSource,
+    A: DownloaderApp + Send + Sync + 'static,
+{
     fn build<S>(self, source: S) -> ParallelDownloader<S, M, C, A>
     where
         S: StreamingSource + Send + Sync + 'static,
     {
-        ParallelDownloader::new(
-            self.context,
-            self.app.expect("App is not set"),
-            source,
-            self.merger.expect("Merger is not set"),
-            self.cache.expect("Cache is not set"),
-            self.concurrency,
-            self.retries,
-            self.stop_signal.expect("Stop signal is not set"),
-        )
+        ParallelDownloader {
+            context: self.context,
+            app: Arc::new(self.app.expect("App is not set")),
+            source: Arc::new(source),
+            merger: Arc::new(Mutex::new(self.merger.expect("Merger is not set"))),
+            cache: Arc::new(self.cache.expect("Cache is not set")),
+            concurrency: self.concurrency,
+            permits: Arc::new(Semaphore::new(self.concurrency.get() as usize)),
+            retries: self.retries,
+            stop_signal: self.stop_signal.expect("Stop signal is not set"),
+        }
     }
 
     pub async fn download<S>(self, source: S) -> IoriResult<MR>
@@ -307,16 +333,5 @@ where
     {
         let downloader = self.build(source);
         downloader.download().await
-    }
-}
-
-impl<M, C, MR, A> Default for ParallelDownloaderBuilder<M, C, MR, A>
-where
-    M: Merger<Result = MR> + Send + Sync + 'static,
-    C: CacheSource,
-    A: DownloaderApp + Send + Sync + 'static,
-{
-    fn default() -> Self {
-        Self::new(Default::default())
     }
 }

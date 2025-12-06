@@ -8,6 +8,9 @@ pub mod ordered_stream;
 pub mod path;
 pub mod range;
 
+pub(crate) type Unset = ();
+pub(crate) type Set = bool;
+
 pub async fn detect_manifest_type(
     url: &str,
     client: &HttpClient,
