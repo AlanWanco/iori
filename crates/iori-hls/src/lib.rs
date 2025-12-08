@@ -1,7 +1,9 @@
 mod error;
-mod m3u8_rs;
+#[doc(hidden)]
+pub mod m3u8_rs;
 mod models;
-mod parse;
+#[doc(hidden)]
+pub mod parse;
 
 pub use error::M3u8ParseError;
 pub use models::*;

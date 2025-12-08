@@ -1,5 +1,5 @@
 use quick_m3u8::tag::{DecimalResolution, hls};
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Deref};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Playlist {
@@ -19,7 +19,7 @@ pub struct VariantStream {
     pub bandwidth: u64,
     pub average_bandwidth: Option<u64>,
     pub resolution: Option<Resolution>,
-    pub frame_rate: Option<f64>,
+    pub frame_rate: Option<F64>,
     pub audio: Option<String>,
     pub video: Option<String>,
 }
@@ -31,7 +31,7 @@ impl<'a> From<(hls::StreamInf<'a>, Cow<'a, str>)> for VariantStream {
             bandwidth: value.bandwidth(),
             average_bandwidth: value.average_bandwidth(),
             resolution: value.resolution().map(Resolution::from),
-            frame_rate: value.frame_rate(),
+            frame_rate: value.frame_rate().map(F64::from),
             audio: value.audio().map(str::to_string),
             video: value.video().map(str::to_string),
         }
@@ -110,7 +110,7 @@ pub struct MediaPlaylist {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaSegment {
     pub uri: String,
-    pub duration: f64,
+    pub duration: F64,
     pub title: Option<String>,
     pub byte_range: Option<ByteRange>,
     pub key: Option<Key>,
@@ -137,7 +137,7 @@ impl<'a>
     ) -> Self {
         Self {
             uri: uri.to_string(),
-            duration: inf.duration(),
+            duration: inf.duration().into(),
             title: match inf.title() {
                 "" => None,
                 title => Some(title.to_string()),
@@ -240,5 +240,31 @@ impl std::fmt::Display for KeyMethod {
             KeyMethod::SampleAesCenc => write!(f, "SAMPLE-AES-CENC"),
             KeyMethod::Other(name) => write!(f, "{name}"),
         }
+    }
+}
+
+// TODO: Remove this once quick-m3u8 is well tested and stable
+#[derive(Debug, Clone, Copy, PartialOrd)]
+pub struct F64(f64);
+
+impl PartialEq<F64> for F64 {
+    fn eq(&self, other: &F64) -> bool {
+        (self.0 - other.0).abs() < 0.1
+    }
+}
+
+impl Eq for F64 {}
+
+impl Deref for F64 {
+    type Target = f64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<f64> for F64 {
+    fn from(value: f64) -> Self {
+        Self(value)
     }
 }

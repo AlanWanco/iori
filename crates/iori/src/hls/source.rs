@@ -172,7 +172,7 @@ impl HlsMediaPlaylistSource {
                     offset: r.offset.unwrap_or(next_range_start),
                     length: Some(r.length),
                 }),
-                duration: segment.duration,
+                duration: *segment.duration,
                 stream_type: self.stream_type,
                 format,
             };
@@ -239,8 +239,8 @@ impl HlsPlaylistSource {
 
                     // compare framerate then
                     if let (Some(a), Some(b)) = (a.frame_rate, b.frame_rate) {
-                        let a = a as u64;
-                        let b = b as u64;
+                        let a = *a as u64;
+                        let b = *b as u64;
                         if a != b {
                             return b.cmp(&a);
                         }

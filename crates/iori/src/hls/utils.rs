@@ -91,8 +91,8 @@ pub async fn load_m3u8(
 
                 // compare framerate then
                 if let (Some(a), Some(b)) = (a.frame_rate, b.frame_rate) {
-                    let a = a as u64;
-                    let b = b as u64;
+                    let a = *a as u64;
+                    let b = *b as u64;
                     if a != b {
                         return b.cmp(&a);
                     }

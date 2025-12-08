@@ -7,11 +7,6 @@ authors.workspace = true
 repository.workspace = true
 license.workspace = true
 
-autobins = false
-autoexamples = false
-autotests = false
-autobenches = false
-
 [dependencies]
 quick-m3u8 = "0.7.0"
 thiserror.workspace = true

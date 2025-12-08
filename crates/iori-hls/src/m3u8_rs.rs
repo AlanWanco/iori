@@ -33,7 +33,7 @@ impl From<m3u8_rs::VariantStream> for VariantStream {
             bandwidth: value.bandwidth,
             average_bandwidth: value.average_bandwidth,
             resolution: value.resolution.map(Resolution::from),
-            frame_rate: value.frame_rate,
+            frame_rate: value.frame_rate.map(F64::from),
             audio: value.audio,
             video: value.video,
         }
@@ -88,7 +88,7 @@ impl From<m3u8_rs::MediaSegment> for MediaSegment {
     fn from(value: m3u8_rs::MediaSegment) -> Self {
         MediaSegment {
             uri: value.uri,
-            duration: value.duration as f64,
+            duration: (value.duration as f64).into(),
             title: value.title,
             byte_range: value.byte_range.map(ByteRange::from),
             key: value.key.map(Key::from),
