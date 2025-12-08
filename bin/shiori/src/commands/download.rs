@@ -38,7 +38,7 @@ use tokio::sync::oneshot;
 #[cfg(feature = "ffmpeg")]
 type MergerType = iori_ffmpeg::FFmpegMerger;
 #[cfg(not(feature = "ffmpeg"))]
-type MergerType = iori::merge::auto::MkvmergeMerger;
+type MergerType = iori::merge::MkvmergeMerger;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "download", visible_alias = "dl", short_flag = 'D')]

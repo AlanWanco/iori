@@ -62,7 +62,7 @@ cfg-if = "1.0.4"
 winresource = "0.1.22"
 
 [features]
-default = ["ffmpeg", "proxy"]
+default = ["proxy"]
 ffmpeg = ["iori-ffmpeg"]
 proxy = ["iori/proxy"]
 
