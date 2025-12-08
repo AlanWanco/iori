@@ -47,7 +47,7 @@ impl<C, M> AutoMerger<C, M> {
             recycle,
             has_failed: false,
 
-            output_file,
+            output_file: output_file.sanitize(),
             allowed_extensions: vec!["mkv", "mp4", "ts"],
             concat_merger,
             merge_merger,
@@ -139,7 +139,10 @@ where
         }
 
         tracing::info!("Merging streams...");
-
+        if let Some(parent) = self.output_file.parent() {
+            tracing::info!("Creating directory: {}", parent.display());
+            tokio::fs::create_dir_all(parent).await?;
+        }
         let output_path = if tracks.len() == 1 {
             let track_format = tracks[0].extension().and_then(|e| e.to_str());
             let output = match track_format {
@@ -148,7 +151,6 @@ where
                     .with_replaced_extension(ext, &self.allowed_extensions),
                 None => self.output_file.clone(),
             }
-            .sanitize()
             .deduplicate()?;
             tokio::fs::rename(&tracks[0], &output).await?;
             output
@@ -159,7 +161,6 @@ where
                     self.merge_merger.format().as_ext(),
                     &self.allowed_extensions,
                 )
-                .sanitize()
                 .deduplicate()?;
             self.merge_merger.merge(tracks, &output).await?;
             output
