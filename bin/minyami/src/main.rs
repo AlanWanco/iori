@@ -11,7 +11,7 @@ use anyhow::bail;
 use clap::Parser;
 use fake_user_agent::get_chrome_rua;
 use iori::{
-    HttpClient, StreamingSource,
+    HttpClient, IoriResult, StreamingSource,
     cache::IoriCache,
     context::IoriContext,
     dash::live::CommonDashLiveSource,
@@ -244,8 +244,8 @@ impl MinyamiArgs {
         output_file
     }
 
-    fn merger(&self) -> IoriMerger<MkvmergeMerger, MkvmergeMerger> {
-        if self.dash {
+    fn merger(&self) -> IoriResult<IoriMerger<MkvmergeMerger, MkvmergeMerger>> {
+        Ok(if self.dash {
             let target_file = self.final_output_file();
             if self.pipe {
                 IoriMerger::pipe_mux(
@@ -254,7 +254,7 @@ impl MinyamiArgs {
                     std::env::var("RE_LIVE_PIPE_OPTIONS").ok(),
                 )
             } else {
-                IoriMerger::mkvmerge(target_file, !self.keep)
+                IoriMerger::mkvmerge(target_file, !self.keep)?
             }
         } else if self.pipe && self.output.is_none() {
             IoriMerger::pipe(!self.keep)
@@ -265,9 +265,9 @@ impl MinyamiArgs {
             if self.pipe {
                 IoriMerger::pipe_to_file(target_file, !self.keep)
             } else {
-                IoriMerger::mkvmerge(target_file, !self.keep)
+                IoriMerger::mkvmerge(target_file, !self.keep)?
             }
-        }
+        })
     }
 
     async fn download<S>(
@@ -287,7 +287,7 @@ impl MinyamiArgs {
         })
         .app(TracingApp::concurrent(self.threads))
         .cache(cache)
-        .merger(self.merger())
+        .merger(self.merger()?)
         .concurrency(self.threads)
         .retries(self.retries)
         .ctrlc_handler()

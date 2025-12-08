@@ -7,7 +7,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-pub struct MkvmergeMerger;
+#[derive(Debug, Clone)]
+pub struct MkvmergeMerger(PathBuf);
+
+impl MkvmergeMerger {
+    pub fn new() -> IoriResult<Self> {
+        let mkvmerge = which::which("mkvmerge")?;
+        Ok(Self(mkvmerge))
+    }
+}
 
 impl AutoMergerConcat for MkvmergeMerger {
     fn format(&self) -> SegmentFormat {
@@ -25,8 +33,6 @@ impl AutoMergerConcat for MkvmergeMerger {
     {
         tracing::debug!("Concatenating with mkvmerge...");
 
-        let mkvmerge = which::which("mkvmerge")?;
-
         let mut args = vec!["-q".to_string(), "[".to_string()];
         for segment in segments {
             let filename = cache.segment_path(segment).await.unwrap();
@@ -43,7 +49,7 @@ impl AutoMergerConcat for MkvmergeMerger {
 
         use tokio::io::{AsyncBufReadExt, BufReader};
 
-        let mut child = Command::new(mkvmerge)
+        let mut child = Command::new(&self.0)
             .arg(format!("@{}", temp_path.to_string_lossy()))
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
