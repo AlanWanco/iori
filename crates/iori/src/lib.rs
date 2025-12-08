@@ -80,7 +80,7 @@ pub trait StreamingSegment {
     fn key(&self) -> Option<std::sync::Arc<decrypt::IoriKey>>;
 
     /// Optional duration of the segment
-    fn duration(&self) -> Option<f32> {
+    fn duration(&self) -> Option<f64> {
         None
     }
 

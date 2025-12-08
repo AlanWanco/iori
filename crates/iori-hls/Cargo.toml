@@ -1,0 +1,21 @@
+[package]
+name = "iori-hls"
+version = "0.0.1"
+
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[dependencies]
+quick-m3u8 = "0.7.0"
+thiserror.workspace = true
+tracing.workspace = true
+
+# TODO: Remove this once quick-m3u8 is well tested and stable
+m3u8-rs = { git = "https://github.com/Yesterday17/m3u8-rs.git" }

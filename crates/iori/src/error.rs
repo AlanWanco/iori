@@ -28,7 +28,7 @@ pub enum IoriError {
     UnpadError(#[from] UnpadError),
 
     #[error("Invalid m3u8 file: {0}")]
-    M3u8ParseError(String),
+    M3u8ParseError(#[from] iori_hls::M3u8ParseError),
 
     #[error(transparent)]
     IOError(#[from] std::io::Error),

@@ -7,7 +7,7 @@ use std::{
 };
 
 use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
-use m3u8_rs::KeyMethod;
+use iori_hls::KeyMethod;
 use tokio::process::Command;
 
 use crate::{
@@ -45,7 +45,7 @@ impl IoriKey {
 
     pub async fn from_key(
         client: &HttpClient,
-        key: &m3u8_rs::Key,
+        key: &iori_hls::Key,
         playlist_url: &reqwest::Url,
         media_sequence: u64,
         manual_key: Option<String>,
@@ -120,31 +120,29 @@ impl IoriKey {
                     keys,
                 })
             }
-            KeyMethod::Other(name) => match name.as_str() {
-                "SAMPLE-AES-CENC" | "SAMPLE-AES-CTR" => {
-                    tracing::debug!("{name} encryption detected. Using manual key.");
+            name @ (KeyMethod::SampleAesCenc | KeyMethod::SampleAESCTR) => {
+                tracing::debug!("Encryption method {name} detected. Using manual key.");
 
-                    // <kid>:<key>;<kid>:<key>;...
-                    let Some(manual_key) = manual_key else {
-                        return Err(IoriError::DecryptionKeyRequired);
-                    };
-                    let mut keys = HashMap::new();
-                    for pair in manual_key.split(';') {
-                        match pair.split_once(':') {
-                            Some((kid, key)) if is_valid_kid_key_pair(kid, key) => {
-                                keys.insert(kid.to_string(), key.to_string());
-                            }
-                            _ => tracing::warn!("Ignored invalid key format: {}", pair),
+                // <kid>:<key>;<kid>:<key>;...
+                let Some(manual_key) = manual_key else {
+                    return Err(IoriError::DecryptionKeyRequired);
+                };
+                let mut keys = HashMap::new();
+                for pair in manual_key.split(';') {
+                    match pair.split_once(':') {
+                        Some((kid, key)) if is_valid_kid_key_pair(kid, key) => {
+                            keys.insert(kid.to_string(), key.to_string());
                         }
+                        _ => tracing::warn!("Ignored invalid key format: {}", pair),
                     }
-                    if keys.is_empty() {
-                        return Err(IoriError::InvalidHexKey(manual_key));
-                    }
-
-                    Some(Self::ClearKey { keys })
                 }
-                _ => unimplemented!("Unknown key method: {name}"),
-            },
+                if keys.is_empty() {
+                    return Err(IoriError::InvalidHexKey(manual_key));
+                }
+
+                Some(Self::ClearKey { keys })
+            }
+            KeyMethod::Other(name) => unimplemented!("Unknown key method: {name}"),
         })
     }
 

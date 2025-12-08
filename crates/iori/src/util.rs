@@ -39,7 +39,7 @@ pub async fn detect_manifest_type(
 
     // 3. check by parsing
     if let Some(initial_playlist_data) = initial_playlist_data {
-        let is_valid_m3u8 = m3u8_rs::parse_playlist_res(initial_playlist_data.as_bytes()).is_ok();
+        let is_valid_m3u8 = iori_hls::parse_playlist_res(initial_playlist_data.as_bytes()).is_ok();
         if is_valid_m3u8 {
             return Ok(is_valid_m3u8);
         }

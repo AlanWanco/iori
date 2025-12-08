@@ -23,7 +23,7 @@ pub struct M3u8Segment {
     /// Media sequence id from the m3u8 file
     pub media_sequence: u64,
 
-    pub duration: f32,
+    pub duration: f64,
     pub format: SegmentFormat,
 }
 
@@ -48,7 +48,7 @@ impl StreamingSegment for M3u8Segment {
         self.key.clone()
     }
 
-    fn duration(&self) -> Option<f32> {
+    fn duration(&self) -> Option<f64> {
         Some(self.duration)
     }
 

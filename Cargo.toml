@@ -12,6 +12,7 @@ license = "Apache-2.0"
 iori = { path = "crates/iori" }
 iori-ffmpeg = { path = "crates/iori-ffmpeg" }
 iori-ssa = { path = "crates/ssa" }
+iori-hls = { path = "crates/iori-hls" }
 
 iori-nicolive = { path = "platforms/nicolive" }
 iori-showroom = { path = "platforms/showroom" }
@@ -30,7 +31,13 @@ uri-match = { path = "crates/uri-match" }
 
 regex = "1.9.3"
 base64 = "0.22.1"
-tokio = { version = "1", features = ["signal", "process", "net", "io-std"] }
+tokio = { version = "1", features = [
+    "signal",
+    "process",
+    "net",
+    "io-std",
+    "rt-multi-thread",
+] }
 
 fake_user_agent = "0.2.1"
 anyhow = "1.0"

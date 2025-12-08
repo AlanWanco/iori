@@ -66,8 +66,8 @@ impl StreamingSource for HlsLiveSource {
                 let segments_average_duration = segments
                     .iter()
                     .map(|ss| {
-                        let total_seconds = ss.iter().map(|s| s.duration).sum::<f32>();
-                        let segments_count = ss.len() as f32;
+                        let total_seconds = ss.iter().map(|s| s.duration).sum::<f64>();
+                        let segments_count = ss.len() as f64;
 
                         if segments_count == 0. {
                             0

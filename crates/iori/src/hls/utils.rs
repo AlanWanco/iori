@@ -1,4 +1,4 @@
-use m3u8_rs::{MediaPlaylist, Playlist};
+use iori_hls::{MediaPlaylist, Playlist};
 use reqwest::Url;
 
 use crate::{
@@ -19,7 +19,7 @@ pub async fn load_playlist_with_retry(
 
         match client.get(url.clone()).send().await {
             Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match m3u8_rs::parse_playlist_res(&m3u8_bytes) {
+                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
                     Ok(parsed) => break parsed,
                     Err(error) => {
                         tracing::warn!("Failed to parse M3U8 file: {error}");
@@ -57,7 +57,7 @@ pub async fn load_m3u8(
 
         match client.get(url.clone()).send().await {
             Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match m3u8_rs::parse_playlist_res(&m3u8_bytes) {
+                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
                     Ok(parsed) => break parsed,
                     Err(error) => {
                         tracing::warn!("Failed to parse M3U8 file: {error}");

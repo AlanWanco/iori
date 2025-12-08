@@ -1217,6 +1217,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fast-float2"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8eb564c5c7423d25c886fb561d1e4ee69f72354d16918afa32c08811f6b6a55"
+
+[[package]]
 name = "fastrand"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2074,9 +2080,9 @@ dependencies = [
  "dash-mpd",
  "futures",
  "hex",
+ "iori-hls",
  "iori-ssa",
  "log",
- "m3u8-rs",
  "mp4decrypt",
  "opendal",
  "pretty_env_logger",
@@ -2124,6 +2130,16 @@ dependencies = [
  "serde_json",
  "shiori-plugin",
  "tokio",
+]
+
+[[package]]
+name = "iori-hls"
+version = "0.0.1"
+dependencies = [
+ "m3u8-rs",
+ "quick-m3u8",
+ "thiserror 2.0.11",
+ "tracing",
 ]
 
 [[package]]
@@ -2416,7 +2432,7 @@ dependencies = [
 [[package]]
 name = "m3u8-rs"
 version = "6.0.0"
-source = "git+https://github.com/Yesterday17/m3u8-rs.git#0153dfa0c5dc24b5939c1bcf98066b0a543ebc29"
+source = "git+https://github.com/Yesterday17/m3u8-rs.git#e57342bbab2d32f7ff91cf8a128d83a59c6b9b77"
 dependencies = [
  "chrono",
  "nom",
@@ -3008,6 +3024,16 @@ checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
 dependencies = [
  "idna",
  "psl-types",
+]
+
+[[package]]
+name = "quick-m3u8"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15a9a17e83debff409e87f767a503cbdc6e54953a8260dfcda7617b1f067b7c1"
+dependencies = [
+ "fast-float2",
+ "memchr",
 ]
 
 [[package]]

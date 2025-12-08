@@ -6,5 +6,5 @@ pub mod utils;
 
 pub use archive::*;
 pub use live::HlsLiveSource;
-pub use m3u8_rs;
+pub use iori_hls;
 pub use source::*;

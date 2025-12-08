@@ -72,7 +72,7 @@ pub struct SegmentInfo {
     pub file_name: String,
     pub initial_segment: InitialSegment,
     pub key: Option<std::sync::Arc<IoriKey>>,
-    pub duration: Option<f32>,
+    pub duration: Option<f64>,
     pub format: SegmentFormat,
 }
 
@@ -115,7 +115,7 @@ impl StreamingSegment for Box<dyn StreamingSegment + Send + Sync + '_> {
         self.as_ref().key()
     }
 
-    fn duration(&self) -> Option<f32> {
+    fn duration(&self) -> Option<f64> {
         self.as_ref().duration()
     }
 
@@ -149,7 +149,7 @@ impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
         self.as_ref().key()
     }
 
-    fn duration(&self) -> Option<f32> {
+    fn duration(&self) -> Option<f64> {
         self.as_ref().duration()
     }
 

@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use m3u8_rs::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
+use iori_hls::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
 use reqwest::Url;
 
 use crate::{
@@ -111,7 +111,7 @@ impl HlsMediaPlaylistSource {
 
                     match self.load_bytes(&context.client, url.clone()).await {
                         Ok(bytes) => {
-                            initial_segment = if m.after_key {
+                            initial_segment = if m.encrypted {
                                 InitialSegment::Encrypted(Arc::new(bytes))
                             } else {
                                 InitialSegment::Clear(Arc::new(bytes))
