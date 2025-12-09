@@ -397,14 +397,13 @@ impl DanmakuMessageChat {
             content: match enquete.status() {
                 // /vote start 本日の番組はいかがでしたか？ とても良かった まぁまぁ良かった ふつうだった あまり良くなかった 良くなかった
                 Status::Poll => format!(
-                    "/vote start {} {}",
-                    enquete.question,
-                    enquete
-                        .choices
-                        .iter()
-                        .map(|c| c.description.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    "/vote start {}",
+                    shlex::try_join(
+                        vec![enquete.question.as_str()]
+                            .into_iter()
+                            .chain(enquete.choices.iter().map(|c| c.description.as_str()))
+                    )
+                    .expect("Vote question and choices should not contain invalid characters")
                 ),
                 // /vote showresult per 977 15 3 2 3
                 Status::Result => format!(
