@@ -1,19 +1,20 @@
+use comparable::Comparable;
 use quick_m3u8::tag::{DecimalResolution, hls};
 use std::{borrow::Cow, ops::Deref};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub enum Playlist {
     MasterPlaylist(MasterPlaylist),
     MediaPlaylist(MediaPlaylist),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct MasterPlaylist {
     pub variants: Vec<VariantStream>,
     pub alternatives: Vec<AlternativeMedia>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct VariantStream {
     pub uri: String,
     pub bandwidth: u64,
@@ -37,7 +38,7 @@ impl<'a> From<(hls::StreamInf<'a>, Cow<'a, str>)> for VariantStream {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Comparable)]
 pub struct Resolution {
     pub width: u64,
     pub height: u64,
@@ -52,7 +53,7 @@ impl From<DecimalResolution> for Resolution {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct AlternativeMedia {
     pub group_id: String,
     pub media_type: AlternativeMediaType,
@@ -80,7 +81,7 @@ impl<'a> From<hls::Media<'a>> for AlternativeMedia {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Comparable)]
 pub enum AlternativeMediaType {
     Audio,
     Video,
@@ -100,14 +101,14 @@ impl From<hls::MediaType> for AlternativeMediaType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct MediaPlaylist {
     pub media_sequence: u64,
     pub segments: Vec<MediaSegment>,
     pub end_list: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct MediaSegment {
     pub uri: String,
     pub duration: F64,
@@ -149,7 +150,7 @@ impl<'a>
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Comparable)]
 pub struct ByteRange {
     pub length: u64,
     pub offset: Option<u64>,
@@ -173,7 +174,7 @@ impl From<quick_m3u8::tag::hls::MapByterange> for ByteRange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct Map {
     pub uri: String,
     pub byte_range: Option<ByteRange>,
@@ -190,16 +191,16 @@ impl<'a> From<(hls::Map<'a>, &Option<Key>)> for Map {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Comparable)]
 pub struct Key {
     pub method: KeyMethod,
     pub uri: Option<String>,
     pub iv: Option<String>,
-    pub key_format: Option<String>,
+    pub key_format: KeyFormat,
     pub key_format_versions: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Comparable)]
 pub enum KeyMethod {
     None,
     AES128,
@@ -207,6 +208,33 @@ pub enum KeyMethod {
     SampleAESCTR,
     SampleAesCenc,
     Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Comparable)]
+pub enum KeyFormat {
+    #[default]
+    Identity,
+    Other(String),
+}
+
+impl From<&str> for KeyFormat {
+    fn from(value: &str) -> Self {
+        if value == "identity" {
+            Self::Identity
+        } else {
+            Self::Other(value.to_string())
+        }
+    }
+}
+
+impl From<String> for KeyFormat {
+    fn from(value: String) -> Self {
+        if value == "identity" {
+            Self::Identity
+        } else {
+            Self::Other(value)
+        }
+    }
 }
 
 impl<'a> From<quick_m3u8::tag::hls::Key<'a>> for Key {
@@ -224,7 +252,7 @@ impl<'a> From<quick_m3u8::tag::hls::Key<'a>> for Key {
             method,
             uri: value.uri().map(str::to_string),
             iv: value.iv().map(str::to_string),
-            key_format: Some(value.keyformat().to_string()),
+            key_format: value.keyformat().into(),
             key_format_versions: value.keyformatversions().map(str::to_string),
         }
     }
@@ -244,7 +272,7 @@ impl std::fmt::Display for KeyMethod {
 }
 
 // TODO: Remove this once quick-m3u8 is well tested and stable
-#[derive(Debug, Clone, Copy, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialOrd, Comparable)]
 pub struct F64(f64);
 
 impl PartialEq<F64> for F64 {

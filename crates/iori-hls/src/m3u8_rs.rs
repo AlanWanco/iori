@@ -122,7 +122,7 @@ impl From<m3u8_rs::Key> for Key {
             method: value.method.into(),
             uri: value.uri,
             iv: value.iv,
-            key_format: value.keyformat,
+            key_format: value.keyformat.map(KeyFormat::from).unwrap_or_default(),
             key_format_versions: value.keyformatversions,
         }
     }
