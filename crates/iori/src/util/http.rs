@@ -1,9 +1,10 @@
 pub use reqwest;
 use reqwest::{Client, ClientBuilder, IntoUrl};
 use reqwest_cookie_store::{CookieStore, CookieStoreMutex};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub struct IoriHttp {
+    client: OnceLock<Client>,
     builder: Arc<dyn Fn() -> ClientBuilder + Send + Sync + 'static>,
     cookies_store: Arc<CookieStoreMutex>,
 }
@@ -11,6 +12,7 @@ pub struct IoriHttp {
 impl Clone for IoriHttp {
     fn clone(&self) -> Self {
         Self {
+            client: OnceLock::new(),
             builder: Arc::clone(&self.builder),
             cookies_store: Arc::clone(&self.cookies_store),
         }
@@ -21,6 +23,7 @@ impl IoriHttp {
     pub fn new(builder: impl Fn() -> ClientBuilder + Send + Sync + 'static) -> Self {
         let cookies_store = Arc::new(CookieStoreMutex::new(CookieStore::default()));
         Self {
+            client: OnceLock::new(),
             builder: Arc::new(builder),
             cookies_store,
         }
@@ -44,7 +47,11 @@ impl IoriHttp {
     }
 
     pub fn client(&self) -> Client {
-        let builder = self.builder();
-        builder.build().unwrap()
+        self.client
+            .get_or_init(|| {
+                let builder = self.builder();
+                builder.build().unwrap()
+            })
+            .clone()
     }
 }
