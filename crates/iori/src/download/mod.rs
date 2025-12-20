@@ -1,5 +1,5 @@
-mod sequencial;
-pub use sequencial::SequencialDownloader;
+mod sequential;
+pub use sequential::SequentialDownloader;
 
 mod parallel;
 pub use parallel::{ParallelDownloader, spawn_ctrlc_handler};

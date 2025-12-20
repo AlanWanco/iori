@@ -5,7 +5,8 @@ use iori::{
     StreamingSource, WriteSegment,
 };
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 #[derive(Clone)]
@@ -14,23 +15,74 @@ pub struct TestSegment {
     pub sequence: u64,
     pub file_name: String,
     pub fail_count: Arc<AtomicU8>,
+    pub delay: Option<Duration>,
+    pub concurrent_counter: Arc<AtomicU32>,
+    pub max_concurrent: Arc<AtomicU32>,
 }
 
 impl TestSegment {
+    pub fn new(stream_id: u64, sequence: u64, file_name: String) -> Self {
+        Self {
+            stream_id,
+            sequence,
+            file_name,
+            fail_count: Arc::new(AtomicU8::new(0)),
+            delay: None,
+            concurrent_counter: Arc::new(AtomicU32::new(0)),
+            max_concurrent: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    pub fn with_fail_count(mut self, fail_count: u8) -> Self {
+        self.fail_count = Arc::new(AtomicU8::new(fail_count));
+        self
+    }
+
+    pub fn with_delay(mut self, delay: Duration) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+
+    pub fn with_counters(mut self, counter: Arc<AtomicU32>, max: Arc<AtomicU32>) -> Self {
+        self.concurrent_counter = counter;
+        self.max_concurrent = max;
+        self
+    }
+
     async fn write_data<W>(&self, writer: &mut W) -> IoriResult<()>
     where
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
-        if self.fail_count.load(Ordering::Relaxed) > 0 {
-            self.fail_count.fetch_sub(1, Ordering::Relaxed);
-            return Err(IoriError::IOError(std::io::Error::other(
-                "Failed to write data",
-            )));
+        let current = self.concurrent_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        loop {
+            let max = self.max_concurrent.load(Ordering::SeqCst);
+            if current <= max
+                || self
+                    .max_concurrent
+                    .compare_exchange(max, current, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+            {
+                break;
+            }
         }
 
-        let data = format!("Segment {} from stream {}", self.sequence, self.stream_id);
-        writer.write_all(data.as_bytes()).await?;
-        Ok(())
+        if let Some(delay) = self.delay {
+            tokio::time::sleep(delay).await;
+        }
+
+        let res = if self.fail_count.load(Ordering::Relaxed) > 0 {
+            self.fail_count.fetch_sub(1, Ordering::Relaxed);
+            Err(IoriError::IOError(std::io::Error::other(
+                "Failed to write data",
+            )))
+        } else {
+            let data = format!("Segment {} from stream {}", self.sequence, self.stream_id);
+            writer.write_all(data.as_bytes()).await?;
+            Ok(())
+        };
+
+        self.concurrent_counter.fetch_sub(1, Ordering::SeqCst);
+        res
     }
 }
 
@@ -64,14 +116,19 @@ impl StreamingSegment for TestSegment {
     }
 }
 
-#[derive(Clone)]
 pub struct TestSource {
-    segments: Vec<TestSegment>,
+    batches: Vec<Vec<TestSegment>>,
 }
 
 impl TestSource {
     pub fn new(segments: Vec<TestSegment>) -> Self {
-        Self { segments }
+        Self {
+            batches: vec![segments],
+        }
+    }
+
+    pub fn new_with_batches(batches: Vec<Vec<TestSegment>>) -> Self {
+        Self { batches }
     }
 }
 
@@ -82,7 +139,9 @@ impl StreamingSource for TestSource {
         &self,
         _: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        Ok(Box::pin(stream::once(async { Ok(self.segments.clone()) })))
+        Ok(Box::pin(stream::iter(
+            self.batches.clone().into_iter().map(Ok),
+        )))
     }
 }
 
@@ -98,18 +157,8 @@ impl WriteSegment for TestSegment {
 #[tokio::test]
 async fn test_streaming_source_implementation() {
     let segments = vec![
-        TestSegment {
-            stream_id: 1,
-            sequence: 0,
-            file_name: "segment0.ts".to_string(),
-            fail_count: Arc::new(AtomicU8::new(0)),
-        },
-        TestSegment {
-            stream_id: 1,
-            sequence: 1,
-            file_name: "segment1.ts".to_string(),
-            fail_count: Arc::new(AtomicU8::new(0)),
-        },
+        TestSegment::new(1, 0, "segment0.ts".to_string()),
+        TestSegment::new(1, 1, "segment1.ts".to_string()),
     ];
 
     let context = IoriContext::default();
@@ -134,12 +183,7 @@ async fn test_streaming_source_implementation() {
 
 #[tokio::test]
 async fn test_streaming_source_fetch_segment() {
-    let segment = TestSegment {
-        stream_id: 1,
-        sequence: 0,
-        file_name: "segment0.ts".to_string(),
-        fail_count: Arc::new(AtomicU8::new(0)),
-    };
+    let segment = TestSegment::new(1, 0, "segment0.ts".to_string());
 
     let mut writer = Vec::new();
     segment

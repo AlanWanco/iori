@@ -8,7 +8,7 @@ use crate::{
     context::IoriContext, error::IoriResult, merge::Merger,
 };
 
-pub struct SequencialDownloader<S, M, C>
+pub struct SequentialDownloader<S, M, C>
 where
     S: StreamingSource,
     M: Merger,
@@ -21,7 +21,7 @@ where
     cache: Arc<C>,
 }
 
-impl<S, M, C> SequencialDownloader<S, M, C>
+impl<S, M, C> SequentialDownloader<S, M, C>
 where
     S: StreamingSource,
     M: Merger,
