@@ -157,7 +157,11 @@ pub struct NivoServerResponse {
 }
 
 impl NivoServerResponse {
-    pub async fn new<S>(video_url: S, user_session: Option<&str>) -> anyhow::Result<Self>
+    pub async fn new<S>(
+        builder: ClientBuilder,
+        video_url: S,
+        user_session: Option<&str>,
+    ) -> anyhow::Result<Self>
     where
         S: AsRef<str>,
     {
@@ -167,7 +171,7 @@ impl NivoServerResponse {
             reqwest::header::COOKIE,
             reqwest::header::HeaderValue::from_str(&format!("user_session={user_session}"))?,
         );
-        let client = Client::builder()
+        let client = builder
             .default_headers(headers)
             .user_agent(get_chrome_rua())
             .build()?;
@@ -357,8 +361,12 @@ mod tests {
     #[tokio::test]
     async fn test_get_playlist() -> anyhow::Result<()> {
         // 【Hatsune Miku】 livetune (kz) - Tell Your World - Full size Ver. 【Sound Radio】
-        let data =
-            NivoServerResponse::new("https://www.nicovideo.jp/watch/sm16550626", None).await?;
+        let data = NivoServerResponse::new(
+            Default::default(),
+            "https://www.nicovideo.jp/watch/sm16550626",
+            None,
+        )
+        .await?;
         println!("{:?}", data.playlist_url().await?);
         Ok(())
     }

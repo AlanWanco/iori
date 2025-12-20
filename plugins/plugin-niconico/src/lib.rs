@@ -224,13 +224,14 @@ impl Inspect for NicoVideoInspector {
 
     async fn inspect(
         &self,
-        _context: &ShioriContext,
+        context: &ShioriContext,
         url: &str,
         _captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let user_session = args.get_string("nico-user-session");
-        let data = NivoServerResponse::new(url, user_session.as_deref()).await?;
+        let data =
+            NivoServerResponse::new(context.http.builder(), url, user_session.as_deref()).await?;
         let (playlist_url, cookies) = data.playlist_url().await?;
         Ok(InspectResult::Playlists(vec![InspectPlaylist {
             title: data.program_title(),
