@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use fake_user_agent::get_chrome_rua;
 use regex::Regex;
-use reqwest::{Client, header::SET_COOKIE};
+use reqwest::{Client, ClientBuilder, header::SET_COOKIE};
 
 static NICO_METADATA_REGEXP: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<script id="embedded-data" data-props="([^"]+)""#).unwrap());
@@ -17,7 +17,11 @@ pub struct NicoEmbeddedData {
 }
 
 impl NicoEmbeddedData {
-    pub async fn new<S>(live_url: S, user_session: Option<&str>) -> anyhow::Result<Self>
+    pub async fn new<S>(
+        builder: ClientBuilder,
+        live_url: S,
+        user_session: Option<&str>,
+    ) -> anyhow::Result<Self>
     where
         S: AsRef<str>,
     {
@@ -27,7 +31,7 @@ impl NicoEmbeddedData {
             reqwest::header::COOKIE,
             reqwest::header::HeaderValue::from_str(&format!("user_session={user_session}"))?,
         );
-        let client = Client::builder().default_headers(headers).build()?;
+        let client = builder.default_headers(headers).build()?;
 
         let live_url = if live_url.as_ref().starts_with("lv") {
             &format!("https://live.nicovideo.jp/watch/{}", live_url.as_ref())
@@ -340,8 +344,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_live_info() -> anyhow::Result<()> {
-        let data =
-            NicoEmbeddedData::new("https://live.nicovideo.jp/watch/lv347149115", None).await?;
+        let data = NicoEmbeddedData::new(
+            Default::default(),
+            "https://live.nicovideo.jp/watch/lv347149115",
+            None,
+        )
+        .await?;
         println!("{:?}", data.websocket_url());
         Ok(())
     }

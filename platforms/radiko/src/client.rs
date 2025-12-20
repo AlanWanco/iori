@@ -18,13 +18,9 @@ pub struct RadikoClient {
 }
 
 impl RadikoClient {
-    pub fn new() -> Self {
+    pub fn new(client: Client) -> Self {
         Self {
-            client: Client::builder()
-                .user_agent(fake_user_agent::get_chrome_rua())
-                .danger_accept_invalid_certs(true)
-                .build()
-                .unwrap(),
+            client,
             device: generate_device_info(),
             auth_cache: HashMap::new(),
         }
@@ -254,11 +250,5 @@ impl RadikoClient {
         }
 
         Err(RadikoError::ProgramNotAvailable)
-    }
-}
-
-impl Default for RadikoClient {
-    fn default() -> Self {
-        Self::new()
     }
 }

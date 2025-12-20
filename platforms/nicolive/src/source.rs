@@ -1,5 +1,5 @@
 use iori::{
-    HttpClient, IoriResult, Stream, StreamingSource,
+    IoriHttp, IoriResult, Stream, StreamingSource,
     context::IoriContext,
     hls::{HlsLiveSource, segment::M3u8Segment},
 };
@@ -18,12 +18,12 @@ pub struct NicoTimeshiftSource(HlsLiveSource);
 
 impl NicoTimeshiftSource {
     pub async fn new(
-        client: HttpClient,
+        http: IoriHttp,
         wss_url: String,
         quality: &str,
         chase_play: bool,
     ) -> anyhow::Result<Self> {
-        let watcher = crate::watch::WatchClient::new(&wss_url).await?;
+        let watcher = crate::watch::WatchClient::new(http.builder(), &wss_url).await?;
         watcher.start_watching(quality, chase_play).await?;
 
         let stream = loop {
@@ -35,7 +35,7 @@ impl NicoTimeshiftSource {
 
         log::info!("Playlist: {}", stream.uri);
         let url = Url::parse(&stream.uri)?;
-        client.add_cookies(stream.cookies.into_cookies(), url);
+        http.add_cookies(stream.cookies.into_cookies(), url);
 
         // keep seats
         tokio::spawn(async move {

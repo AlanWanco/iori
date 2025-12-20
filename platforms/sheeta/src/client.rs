@@ -4,7 +4,7 @@ use crate::model::{
 use fake_user_agent::get_chrome_rua;
 use reqwest::{
     Client,
-    header::{HeaderMap, HeaderValue, ORIGIN},
+    header::{HeaderValue, ORIGIN, USER_AGENT},
 };
 use serde_json::json;
 
@@ -30,37 +30,30 @@ impl SheetaClient {
             .unwrap()
     }
 
-    pub fn nico_channel_plus() -> Self {
+    pub fn nico_channel_plus(client: Client) -> Self {
         Self::new(
             "https://api.nicochannel.jp/fc".to_string(),
-            "https://nicochannel.jp".parse().unwrap(),
+            "https://nicochannel.jp".to_string(),
+            client,
         )
     }
 
-    pub async fn common(domain: &str) -> anyhow::Result<Self> {
-        let settings: SiteSettings =
-            reqwest::get(format!("https://{domain}/site/portal/settings.json"))
-                .await?
-                .json()
-                .await?;
+    pub async fn common(domain: &str, client: Client) -> anyhow::Result<Self> {
+        let settings: SiteSettings = client
+            .get(format!("https://{domain}/site/portal/settings.json"))
+            .header(USER_AGENT, get_chrome_rua())
+            .send()
+            .await?
+            .json()
+            .await?;
         Ok(Self::new(
             settings.api_base_url,
             format!("https://{domain}"),
+            client,
         ))
     }
 
-    pub(crate) fn new(base_url: String, origin: String) -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(ORIGIN, origin.parse().unwrap());
-        // headers.insert(REFERER, origin.parse().unwrap());
-
-        let client = Client::builder()
-            .default_headers(headers)
-            .user_agent(get_chrome_rua())
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
-
+    pub(crate) fn new(base_url: String, origin: String, client: Client) -> Self {
         Self {
             api_base_url: base_url,
             origin,
@@ -75,6 +68,8 @@ impl SheetaClient {
                 "{}/content_providers/channel_domain",
                 self.api_base_url
             ))
+            .header(USER_AGENT, get_chrome_rua())
+            .header(ORIGIN, HeaderValue::from_str(self.origin())?)
             .query(&[(
                 "current_site_domain",
                 format!("{}/{channel_name}", self.origin()),
@@ -96,6 +91,8 @@ impl SheetaClient {
         let response: FcVideoPageResponse = self
             .client
             .get(url)
+            .header(USER_AGENT, get_chrome_rua())
+            .header(ORIGIN, HeaderValue::from_str(self.origin())?)
             .header("fc_site_id", fc_site_id) // FIXME: get correct site_id
             .header("fc_use_device", HeaderValue::from_static("null"))
             .send()
@@ -110,6 +107,8 @@ impl SheetaClient {
         let response: SessionIdResponse = self
             .client
             .post(url)
+            .header(USER_AGENT, get_chrome_rua())
+            .header(ORIGIN, HeaderValue::from_str(self.origin())?)
             // .bearer_auth("")
             .header("fc_site_id", fc_site_id)
             .header("fc_use_device", HeaderValue::from_static("null"))
@@ -158,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_session_id() {
-        let client = SheetaClient::nico_channel_plus();
+        let client = SheetaClient::nico_channel_plus(Default::default());
         let session_id = client
             .get_session_id(0, "smHLeLu9aQtR3taSjgCdEqvC")
             .await
@@ -171,6 +170,7 @@ mod tests {
         let client = SheetaClient::new(
             "https://api.nicochannel.jp".to_string(),
             "https://nicochannel.jp".to_string(),
+            Default::default(),
         );
 
         let video_url = client

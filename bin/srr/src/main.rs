@@ -8,7 +8,6 @@ mod webhook;
 
 use config::Config;
 use iori::{
-    HttpClient,
     cache::{
         IoriCache,
         opendal::{Configurator, Operator},
@@ -17,6 +16,7 @@ use iori::{
     download::ParallelDownloader,
     hls::HlsLiveSource,
     merge::IoriMerger,
+    reqwest::Client,
 };
 use iori_showroom::{
     ShowRoomClient,
@@ -76,7 +76,7 @@ impl ShowroomMonitor {
     }
 
     async fn scan(self: Arc<Self>) -> anyhow::Result<()> {
-        let client = ShowRoomClient::new(None).await?;
+        let client = ShowRoomClient::new(Default::default(), None).await?;
 
         let (room_slugs, webhook) = {
             let config = self.config.lock().unwrap();
@@ -129,7 +129,7 @@ impl ShowroomMonitor {
                             profile: profile.clone(),
                         };
                         tokio::spawn(async move {
-                            let client = HttpClient::default();
+                            let client = Client::new();
                             let _ = client.post(&webhook.url).json(&body).send().await;
                         });
                     }
@@ -146,7 +146,7 @@ impl ShowroomMonitor {
                             profile,
                         };
                         tokio::spawn(async move {
-                            let client = HttpClient::default();
+                            let client = Client::new();
                             let _ = client.post(webhook.url).json(&body).send().await;
                         });
                     }
@@ -181,7 +181,7 @@ async fn record_room(
     let live_id = room_info.live_id;
     log::info!("Start recording room {room_slug}, id = {room_id}, live_id = {live_id}");
 
-    let client = HttpClient::default();
+    let client = Client::new();
     let source = HlsLiveSource::new(stream.url.clone(), None)?;
     let cache = IoriCache::opendal(
         operator.clone(),

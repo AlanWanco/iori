@@ -44,6 +44,7 @@ impl Inspect for ExampleInspector {
 
     async fn inspect(
         &self,
+        _context: &ShioriContext,
         _url: &str,
         _captures: &Captures,
         _args: &dyn InspectorArguments,

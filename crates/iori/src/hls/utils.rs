@@ -1,13 +1,10 @@
+use crate::error::{IoriError, IoriResult};
 use iori_hls::{MediaPlaylist, Playlist};
+use reqwest::Client;
 use reqwest::Url;
 
-use crate::{
-    error::{IoriError, IoriResult},
-    util::http::HttpClient,
-};
-
 pub async fn load_playlist_with_retry(
-    client: &HttpClient,
+    client: &Client,
     url: &Url,
     total_retry: u32,
 ) -> IoriResult<Playlist> {
@@ -43,7 +40,7 @@ pub async fn load_playlist_with_retry(
 
 #[async_recursion::async_recursion]
 pub async fn load_m3u8(
-    client: &HttpClient,
+    client: &Client,
     url: Url,
     total_retry: u32,
 ) -> IoriResult<(Url, MediaPlaylist)> {

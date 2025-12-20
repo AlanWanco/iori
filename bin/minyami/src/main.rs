@@ -11,7 +11,7 @@ use anyhow::bail;
 use clap::Parser;
 use fake_user_agent::get_chrome_rua;
 use iori::{
-    HttpClient, IoriResult, StreamingSource,
+    IoriHttp, IoriResult, StreamingSource,
     cache::IoriCache,
     context::IoriContext,
     dash::live::CommonDashLiveSource,
@@ -156,7 +156,7 @@ pub struct MinyamiArgs {
 }
 
 impl MinyamiArgs {
-    fn client(&self) -> HttpClient {
+    fn http(&self) -> IoriHttp {
         let mut headers = HeaderMap::new();
         if let Some(cookies) = &self.cookies {
             headers.insert(
@@ -173,15 +173,19 @@ impl MinyamiArgs {
             );
         }
 
-        let mut client = Client::builder()
-            .default_headers(headers)
-            .user_agent(get_chrome_rua())
-            .timeout(Duration::from_secs(self.timeout));
-        if let Some(proxy) = &self.proxy {
-            client = client.proxy(Proxy::all(proxy).expect("Invalid proxy"));
-        }
+        let timeout = Duration::from_secs(self.timeout);
+        let proxy = self.proxy.clone();
+        IoriHttp::new(move || {
+            let mut builder = Client::builder()
+                .default_headers(headers.clone())
+                .user_agent(get_chrome_rua())
+                .timeout(timeout);
+            if let Some(proxy) = &proxy {
+                builder = builder.proxy(Proxy::all(proxy).expect("Invalid proxy"));
+            }
 
-        HttpClient::new(client)
+            builder
+        })
     }
 
     fn temp_dir(&self) -> anyhow::Result<PathBuf> {
@@ -270,17 +274,12 @@ impl MinyamiArgs {
         })
     }
 
-    async fn download<S>(
-        &self,
-        client: HttpClient,
-        source: S,
-        cache: IoriCache,
-    ) -> anyhow::Result<()>
+    async fn download<S>(&self, http: IoriHttp, source: S, cache: IoriCache) -> anyhow::Result<()>
     where
         S: StreamingSource + Send + Sync + 'static,
     {
         ParallelDownloader::builder(IoriContext {
-            client,
+            client: http.client(),
             shaka_packager_command: self.shaka_packager.clone().into(),
             manifest_retries: self.manifest_retries,
             segment_retries: self.retries,
@@ -297,7 +296,7 @@ impl MinyamiArgs {
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
-        let client = self.client();
+        let http = self.http();
         let final_temp_dir = self.final_temp_dir()?;
 
         let cache: IoriCache = match (self.live, self.pipe, self.dash) {
@@ -327,8 +326,8 @@ impl MinyamiArgs {
                 )
             };
 
-            let source = NicoTimeshiftSource::new(client.clone(), wss_url, quality, false).await?;
-            self.download(client, source, cache).await?;
+            let source = NicoTimeshiftSource::new(http.clone(), wss_url, quality, false).await?;
+            self.download(http, source, cache).await?;
             return Ok(());
         }
 
@@ -336,12 +335,12 @@ impl MinyamiArgs {
             // DASH Live / Archive
             (true, _) => {
                 let source = CommonDashLiveSource::new(self.m3u8.parse()?, self.key.as_deref())?;
-                self.download(client, source, cache).await?;
+                self.download(http, source, cache).await?;
             }
             // HLS Live
             (false, true) => {
                 let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
-                self.download(client, source, cache).await?;
+                self.download(http, source, cache).await?;
             }
             // HLS Archive
             (false, false) => {
@@ -350,7 +349,7 @@ impl MinyamiArgs {
                     self.key.as_deref(),
                     self.range,
                 )?;
-                self.download(client, source, cache).await?;
+                self.download(http, source, cache).await?;
             }
         }
 

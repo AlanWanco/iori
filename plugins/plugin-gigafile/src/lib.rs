@@ -1,9 +1,6 @@
 use fake_user_agent::get_chrome_rua;
 use iori_gigafile::GigafileClient;
-use shiori_plugin::iori::reqwest::{
-    Client,
-    header::{CONTENT_DISPOSITION, COOKIE, USER_AGENT},
-};
+use shiori_plugin::iori::reqwest::header::{CONTENT_DISPOSITION, COOKIE, USER_AGENT};
 use shiori_plugin::*;
 
 pub struct GigafilePlugin;
@@ -42,18 +39,16 @@ impl Inspect for GigafileInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         url: &str,
         _captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let key = args.get_string("giga-key");
-        let client = GigafileClient::new(key);
+        let client = GigafileClient::new(context.http.client(), key);
         let (url, cookie) = client.get_download_url(url.try_into()?).await?;
 
-        let client = Client::builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
+        let client = context.http.client();
         let response = client
             .get(&url)
             .header(COOKIE, &cookie)

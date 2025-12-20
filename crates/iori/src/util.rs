@@ -1,4 +1,4 @@
-use http::HttpClient;
+use reqwest::Client;
 
 use crate::IoriResult;
 
@@ -11,10 +11,7 @@ pub mod range;
 pub(crate) type Unset = ();
 pub(crate) type Set = bool;
 
-pub async fn detect_manifest_type(
-    url: &str,
-    client: &HttpClient,
-) -> IoriResult<bool /* is m3u8 */> {
+pub async fn detect_manifest_type(url: &str, client: &Client) -> IoriResult<bool /* is m3u8 */> {
     // 1. chcek extension
     let url = reqwest::Url::parse(url)?;
     if url.path().to_lowercase().ends_with(".m3u8") {

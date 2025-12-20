@@ -1,3 +1,10 @@
+use crate::{
+    SegmentFormat,
+    error::{IoriError, IoriResult},
+};
+use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
+use iori_hls::KeyMethod;
+use reqwest::Client;
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -5,16 +12,7 @@ use std::{
     io::{Cursor, Read, Write},
     path::PathBuf,
 };
-
-use aes::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
-use iori_hls::KeyMethod;
 use tokio::process::Command;
-
-use crate::{
-    SegmentFormat,
-    error::{IoriError, IoriResult},
-    util::http::HttpClient,
-};
 
 #[derive(Debug)]
 pub enum IoriKey {
@@ -44,7 +42,7 @@ impl IoriKey {
     }
 
     pub async fn from_key(
-        client: &HttpClient,
+        client: &Client,
         key: &iori_hls::Key,
         playlist_url: &reqwest::Url,
         media_sequence: u64,

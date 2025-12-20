@@ -9,7 +9,7 @@ use clap::{Args, Parser};
 use clap_handler::handler;
 use fake_user_agent::get_chrome_rua;
 use iori::{
-    HttpClient,
+    IoriHttp,
     cache::{
         IoriCache,
         opendal::{Operator, services},
@@ -26,7 +26,7 @@ use reqwest::{
     Client, IntoUrl,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
-use shiori_plugin::PlaylistType;
+use shiori_plugin::{PlaylistType, ShioriContext};
 use std::{
     num::NonZeroU32,
     path::PathBuf,
@@ -85,9 +85,9 @@ where
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
-        let client = self.http.into_client(&self.url);
+        let http = self.http.into_client(&self.url);
         let context = IoriContext {
-            client,
+            client: http.client(),
             shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
             manifest_retries: self.download.manifest_retries,
             segment_retries: self.download.segment_retries,
@@ -188,7 +188,7 @@ pub struct HttpOptions {
 }
 
 impl HttpOptions {
-    pub fn into_client(self, url: impl IntoUrl) -> HttpClient {
+    pub fn into_client(self, url: impl IntoUrl) -> IoriHttp {
         let mut headers = HeaderMap::new();
 
         for header in &self.headers {
@@ -199,16 +199,18 @@ impl HttpOptions {
             );
         }
 
-        let mut builder = Client::builder()
-            .default_headers(headers)
-            .user_agent(get_chrome_rua())
-            .timeout(Duration::from_secs(self.timeout))
-            .danger_accept_invalid_certs(true);
-        if self.http1_only {
-            builder = builder.http1_only().http1_title_case_headers();
-        }
-
-        let client = HttpClient::new(builder);
+        let client = IoriHttp::new(move || {
+            let mut builder = Client::builder()
+                .default_headers(headers.clone())
+                .user_agent(get_chrome_rua())
+                .connection_verbose(true)
+                .timeout(Duration::from_secs(self.timeout))
+                .danger_accept_invalid_certs(true);
+            if self.http1_only {
+                builder = builder.http1_only().http1_title_case_headers();
+            }
+            builder
+        });
         client.add_cookies(self.cookies, url);
         client
     }
@@ -414,9 +416,10 @@ type ShioriDownloadCommand = DownloadCommand<InspectorOptions>;
 #[handler(ShioriDownloadCommand)]
 pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> anyhow::Result<()> {
     tracing::info!("Loading URL: {}", me.url);
+    let shiori_context = ShioriContext::new(me.http.clone().into_client(&me.url));
     let (_, data) = get_default_external_inspector()
         .wait(me.wait)
-        .inspect(&me.url, &me.inspector_options, |c| {
+        .inspect(&shiori_context, &me.url, &me.inspector_options, |c| {
             tracing::warn!("Selecting inspector candidates is not implemented yet. Falling back to the first candidate.");
             c.into_iter().next().unwrap()
         })

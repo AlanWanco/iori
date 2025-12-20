@@ -50,11 +50,16 @@ impl Inspect for ShowroomLiveInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         _url: &str,
         captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
-        let client = ShowRoomClient::new(args.get_string("showroom-user-session")).await?;
+        let client = ShowRoomClient::new(
+            context.http.builder(),
+            args.get_string("showroom-user-session"),
+        )
+        .await?;
 
         let room_name = captures.name("room_name").unwrap();
         let room_id = match room_name.as_str().parse::<u64>() {
@@ -92,11 +97,12 @@ impl Inspect for ShowroomTimeshiftInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         _url: &str,
         captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
-        let client = ShowRoomClient::new(args.get_string("sr-id")).await?;
+        let client = ShowRoomClient::new(context.http.builder(), args.get_string("sr-id")).await?;
 
         let room_url_key = captures.name("room_url_key").unwrap();
         let view_url_key = captures.name("view_url_key").unwrap();

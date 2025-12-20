@@ -6,7 +6,7 @@ use protocol::{
         BackwardSegment, PackedSegment, chunked_entry::Entry, chunked_message::Payload,
     },
 };
-use reqwest::Client;
+use reqwest::{Client, ClientBuilder};
 
 use crate::{model::*, xml2ass::xml2ass};
 
@@ -37,7 +37,7 @@ pub struct DanmakuClient {
 }
 
 impl DanmakuClient {
-    pub async fn new(view_uri: String) -> anyhow::Result<Self> {
+    pub async fn new(builder: ClientBuilder, view_uri: String) -> anyhow::Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::ORIGIN,
@@ -47,7 +47,7 @@ impl DanmakuClient {
             reqwest::header::REFERER,
             reqwest::header::HeaderValue::from_str("https://live.nicovideo.jp/")?,
         );
-        let client = Client::builder()
+        let client = builder
             .default_headers(headers)
             .user_agent(get_chrome_rua())
             .build()?;
@@ -233,11 +233,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_danmaku() -> anyhow::Result<()> {
-        let data =
-            NicoEmbeddedData::new("https://live.nicovideo.jp/watch/lv345610602", None).await?;
+        let data = NicoEmbeddedData::new(
+            Default::default(),
+            "https://live.nicovideo.jp/watch/lv345610602",
+            None,
+        )
+        .await?;
         let wss_url = data.websocket_url().expect("No websocket url found");
 
-        let watcher = WatchClient::new(wss_url).await.unwrap();
+        let watcher = WatchClient::new(Default::default(), wss_url).await.unwrap();
         watcher.start_watching("super_high", false).await.unwrap();
 
         let message_server = loop {
@@ -247,7 +251,7 @@ mod tests {
             }
         };
 
-        let client = DanmakuClient::new(message_server.view_uri).await?;
+        let client = DanmakuClient::new(Default::default(), message_server.view_uri).await?;
         let start_time = DateTime::<Utc>::from_str(&message_server.vpos_base_time)
             .map(|r| r.timestamp())
             .ok();

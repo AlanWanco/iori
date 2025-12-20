@@ -1,3 +1,12 @@
+use crate::{
+    InitialSegment, SegmentFormat, StreamType,
+    context::IoriContext,
+    decrypt::IoriKey,
+    error::IoriResult,
+    hls::{segment::M3u8Segment, utils::load_m3u8},
+};
+use iori_hls::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
+use reqwest::{Client, Url};
 use std::{
     hash::{Hash, Hasher},
     str::FromStr,
@@ -5,17 +14,6 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-};
-
-use iori_hls::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
-use reqwest::Url;
-
-use crate::{
-    HttpClient, InitialSegment, SegmentFormat, StreamType,
-    context::IoriContext,
-    decrypt::IoriKey,
-    error::IoriResult,
-    hls::{segment::M3u8Segment, utils::load_m3u8},
 };
 
 use super::utils::load_playlist_with_retry;
@@ -192,7 +190,7 @@ impl HlsMediaPlaylistSource {
         Ok((segments, playlist_url, playlist))
     }
 
-    async fn load_bytes(&self, client: &HttpClient, url: Url) -> IoriResult<Vec<u8>> {
+    async fn load_bytes(&self, client: &Client, url: Url) -> IoriResult<Vec<u8>> {
         Ok(client.get(url).send().await?.bytes().await?.to_vec())
     }
 }

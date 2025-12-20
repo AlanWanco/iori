@@ -105,6 +105,7 @@ impl PluginManager {
 
     pub async fn inspect(
         self,
+        context: &ShioriContext,
         url: &str,
         args: &dyn InspectorArguments,
         choose_candidate: fn(Vec<InspectCandidate>) -> InspectCandidate,
@@ -122,11 +123,12 @@ impl PluginManager {
                 if let Some(captures) = item.regex.captures(&url) {
                     let inspect_result = item
                         .inspector
-                        .inspect(&url, &captures, args)
+                        .inspect(context, &url, &captures, args)
                         .await
                         .inspect_err(|e| log::error!("Failed to inspect {url}: {:?}", e))
                         .ok();
                     let inspect_branch = handle_inspect_result(
+                        context,
                         item.inspector.as_ref(),
                         inspect_result,
                         choose_candidate,
@@ -189,6 +191,7 @@ enum InspectBranch {
 
 #[async_recursion::async_recursion]
 async fn handle_inspect_result(
+    context: &ShioriContext,
     inspector: &dyn Inspect,
     result: Option<InspectResult>,
     choose_candidate: fn(Vec<InspectCandidate>) -> InspectCandidate,
@@ -198,11 +201,11 @@ async fn handle_inspect_result(
         Some(InspectResult::Candidates(candidates)) => {
             let candidate = choose_candidate(candidates);
             let result = inspector
-                .inspect_candidate(candidate)
+                .inspect_candidate(context, candidate)
                 .await
                 .inspect_err(|e| log::error!("Failed to inspect candidate: {:?}", e))
                 .ok();
-            handle_inspect_result(inspector, result, choose_candidate).await
+            handle_inspect_result(context, inspector, result, choose_candidate).await
         }
         Some(InspectResult::Playlist(data)) => InspectBranch::Found(vec![data]),
         Some(InspectResult::Playlists(data)) => InspectBranch::Found(data),

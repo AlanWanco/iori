@@ -48,6 +48,7 @@ impl Inspect for HlsInspector {
     /// HLS playlist and immediately returns it.
     async fn inspect(
         &self,
+        _context: &ShioriContext,
         url: &str,
         _captures: &regex::Captures,
         _args: &dyn InspectorArguments,

@@ -2,10 +2,9 @@ pub mod constants;
 pub mod model;
 
 use anyhow::Context;
-use fake_user_agent::get_chrome_rua;
 use model::*;
 use reqwest::{
-    Client,
+    Client, ClientBuilder,
     header::{COOKIE, HeaderMap, HeaderValue, SET_COOKIE},
 };
 
@@ -45,11 +44,7 @@ impl ShowRoomClient {
     /// Might be useful for timeshift
     pub const ARCHIVE_KEY: &str = "2a63847146f96dd3a17077f6c72daffb";
 
-    pub async fn new(sr_id: Option<String>) -> anyhow::Result<Self> {
-        let mut builder = Client::builder()
-            .user_agent(get_chrome_rua())
-            .connection_verbose(true);
-
+    pub async fn new(mut builder: ClientBuilder, sr_id: Option<String>) -> anyhow::Result<Self> {
         let sr_id = match sr_id {
             Some(s) => s,
             None => get_sr_id().await?,
@@ -187,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_id_by_room_name() {
-        let client = ShowRoomClient::new(None).await.unwrap();
+        let client = ShowRoomClient::new(Default::default(), None).await.unwrap();
         let info = client.room_info(S46_NAGISA_KOJIMA).await.unwrap();
         assert_eq!(info.id, 479510);
     }

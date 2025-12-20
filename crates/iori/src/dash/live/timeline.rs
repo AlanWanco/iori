@@ -5,16 +5,8 @@
 /// - [MPEG-DASH](https://www.mpeg.org/standards/MPEG-DASH/)
 /// - https://github.com/nilaoda/N_m3u8DL-RE/blob/ad7136ae64379cb5aae09a6ada2b788c7030c917/src/N_m3u8DL-RE.Parser/Extractor/DASHExtractor2.cs
 /// - https://github.com/emarsden/dash-mpd-rs/blob/main/src/fetch.rs
-use chrono::{DateTime, Duration, TimeDelta, Utc};
-use dash_mpd::{
-    AdaptationSet, MPD, Period, Representation, SegmentBase, SegmentList, SegmentTemplate,
-};
-use url::Url;
-
-use std::sync::Arc;
-
 use crate::{
-    ByteRange, HttpClient, InitialSegment, IoriError, IoriResult, StreamType,
+    ByteRange, InitialSegment, IoriError, IoriResult, StreamType,
     dash::{
         segment::DashSegment,
         template::{Template, TemplateUrl},
@@ -22,6 +14,13 @@ use crate::{
     },
     decrypt::IoriKey,
 };
+use chrono::{DateTime, Duration, TimeDelta, Utc};
+use dash_mpd::{
+    AdaptationSet, MPD, Period, Representation, SegmentBase, SegmentList, SegmentTemplate,
+};
+use reqwest::Client;
+use std::sync::Arc;
+use url::Url;
 
 use super::{clock::Clock, selector::best_representation};
 
@@ -63,11 +62,7 @@ pub struct MPDTimeline {
 }
 
 impl MPDTimeline {
-    pub async fn from_mpd(
-        client: &HttpClient,
-        mpd: MPD,
-        mpd_url: Option<&Url>,
-    ) -> IoriResult<Self> {
+    pub async fn from_mpd(client: &Client, mpd: MPD, mpd_url: Option<&Url>) -> IoriResult<Self> {
         let mut presentation = DashPresentation::from_mpd(&mpd);
         presentation.sync_time(&mpd, client).await?;
 
@@ -120,7 +115,7 @@ impl MPDTimeline {
     /// Note that this function can not handle segment time at UNIX_EPOCH
     pub async fn segments_since(
         &self,
-        client: &HttpClient,
+        client: &Client,
         since: Option<DateTime<Utc>>,
         key: Option<Arc<IoriKey>>,
     ) -> IoriResult<(Vec<DashSegment>, Option<DateTime<Utc>>)> {
@@ -459,16 +454,11 @@ impl MPDTimeline {
     }
 
     /// Sync clock for internal clock
-    pub async fn sync_time(&mut self, mpd: &MPD, client: &HttpClient) -> IoriResult<()> {
+    pub async fn sync_time(&mut self, mpd: &MPD, client: &Client) -> IoriResult<()> {
         self.presentation.sync_time(mpd, client).await
     }
 
-    pub async fn update_mpd(
-        &mut self,
-        client: &HttpClient,
-        mpd: MPD,
-        mpd_url: &Url,
-    ) -> IoriResult<()> {
+    pub async fn update_mpd(&mut self, client: &Client, mpd: MPD, mpd_url: &Url) -> IoriResult<()> {
         let mpd_base_url = mpd.base_url.first().map(|u| u.base.as_str());
         let base_url = match mpd_base_url {
             Some(mpd_base_url) => merge_baseurls(mpd_url, mpd_base_url)?,
@@ -522,7 +512,7 @@ impl DashPresentation {
         }
     }
 
-    pub async fn sync_time(&mut self, mpd: &MPD, client: &HttpClient) -> IoriResult<()> {
+    pub async fn sync_time(&mut self, mpd: &MPD, client: &Client) -> IoriResult<()> {
         if let DashPresentation::Dynamic { clock, .. } = self {
             clock.sync(mpd, client).await?;
         }

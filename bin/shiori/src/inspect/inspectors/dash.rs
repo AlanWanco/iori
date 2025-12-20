@@ -49,6 +49,7 @@ impl Inspect for DashInspector {
     /// DASH playlist and immediately returns it.
     async fn inspect(
         &self,
+        _context: &ShioriContext,
         url: &str,
         _captures: &regex::Captures,
         _args: &dyn InspectorArguments,

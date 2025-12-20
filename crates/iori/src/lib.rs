@@ -10,7 +10,7 @@ pub mod hls;
 
 pub(crate) mod util;
 use crate::context::IoriContext;
-pub use crate::util::http::HttpClient;
+pub use crate::util::http::IoriHttp;
 pub use futures::Stream;
 pub use reqwest;
 pub mod utils {

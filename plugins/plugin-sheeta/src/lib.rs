@@ -60,6 +60,7 @@ impl Inspect for SheetaInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         _url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
@@ -69,7 +70,7 @@ impl Inspect for SheetaInspector {
             .map(|s| s.as_str())
             .or(self.host.as_deref())
             .with_context(|| "Missing sheeta host")?;
-        let client = SheetaClient::common(host).await?;
+        let client = SheetaClient::common(host, context.http.client()).await?;
 
         let video_id = captures
             .name("video_id")

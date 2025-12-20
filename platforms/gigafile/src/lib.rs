@@ -1,5 +1,4 @@
 use anyhow::Result;
-use fake_user_agent::get_chrome_rua;
 use reqwest::header::SET_COOKIE;
 use reqwest::{Client, Url};
 
@@ -9,13 +8,7 @@ pub struct GigafileClient {
 }
 
 impl GigafileClient {
-    pub fn new(key: Option<String>) -> Self {
-        let client = reqwest::Client::builder()
-            .user_agent(get_chrome_rua())
-            .danger_accept_invalid_certs(true)
-            .build()
-            .unwrap();
-
+    pub fn new(client: Client, key: Option<String>) -> Self {
         Self { client, key }
     }
 

@@ -1,26 +1,27 @@
-use std::{ops::Deref, sync::Arc};
-
+pub use reqwest;
 use reqwest::{Client, ClientBuilder, IntoUrl};
 use reqwest_cookie_store::{CookieStore, CookieStoreMutex};
+use std::sync::Arc;
 
-pub use reqwest;
-
-#[derive(Clone)]
-pub struct HttpClient {
-    client: Client,
+pub struct IoriHttp {
+    builder: Arc<dyn Fn() -> ClientBuilder + Send + Sync + 'static>,
     cookies_store: Arc<CookieStoreMutex>,
 }
 
-impl HttpClient {
-    pub fn new(builder: ClientBuilder) -> Self {
-        let cookies_store = Arc::new(CookieStoreMutex::new(CookieStore::default()));
-        let client = builder
-            .cookie_provider(cookies_store.clone())
-            .build()
-            .unwrap();
-
+impl Clone for IoriHttp {
+    fn clone(&self) -> Self {
         Self {
-            client,
+            builder: Arc::clone(&self.builder),
+            cookies_store: Arc::clone(&self.cookies_store),
+        }
+    }
+}
+
+impl IoriHttp {
+    pub fn new(builder: impl Fn() -> ClientBuilder + Send + Sync + 'static) -> Self {
+        let cookies_store = Arc::new(CookieStoreMutex::new(CookieStore::default()));
+        Self {
+            builder: Arc::new(builder),
             cookies_store,
         }
     }
@@ -30,33 +31,20 @@ impl HttpClient {
             return;
         }
 
-        let url = url.into_url().unwrap();
+        let url: url::Url = url.into_url().unwrap();
         let mut lock = self.cookies_store.lock().unwrap();
         for cookie in cookies {
             _ = lock.parse(&cookie, &url);
         }
     }
-}
 
-impl Default for HttpClient {
-    fn default() -> Self {
-        let cookies_store = Arc::new(CookieStoreMutex::new(CookieStore::default()));
-        let client = Client::builder()
-            .cookie_provider(cookies_store.clone())
-            .build()
-            .unwrap();
-
-        Self {
-            client,
-            cookies_store,
-        }
+    pub fn builder(&self) -> ClientBuilder {
+        let cookies_store = self.cookies_store.clone();
+        (self.builder)().cookie_provider(cookies_store)
     }
-}
 
-impl Deref for HttpClient {
-    type Target = Client;
-
-    fn deref(&self) -> &Self::Target {
-        &self.client
+    pub fn client(&self) -> Client {
+        let builder = self.builder();
+        builder.build().unwrap()
     }
 }

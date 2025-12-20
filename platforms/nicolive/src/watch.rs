@@ -6,7 +6,7 @@ use futures_util::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
 };
-use reqwest::Client;
+use reqwest::{Client, ClientBuilder};
 use reqwest_websocket::{Message, RequestBuilderExt, WebSocket};
 use serde_json::json;
 use tokio::{
@@ -24,11 +24,11 @@ pub struct WatchClient {
 }
 
 impl WatchClient {
-    pub async fn new<S>(ws_url: S) -> anyhow::Result<Self>
+    pub async fn new<S>(builder: ClientBuilder, ws_url: S) -> anyhow::Result<Self>
     where
         S: AsRef<str>,
     {
-        let client = Client::builder()
+        let client = builder
             .user_agent(get_chrome_rua())
             // https://github.com/jgraef/reqwest-websocket/issues/2
             .http1_only()
@@ -209,11 +209,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_room() -> anyhow::Result<()> {
-        let data =
-            NicoEmbeddedData::new("https://live.nicovideo.jp/watch/lv342260645", None).await?;
+        let data = NicoEmbeddedData::new(
+            Default::default(),
+            "https://live.nicovideo.jp/watch/lv342260645",
+            None,
+        )
+        .await?;
         let wss_url = data.websocket_url().expect("No websocket url found");
 
-        let watcher = WatchClient::new(wss_url).await.unwrap();
+        let watcher = WatchClient::new(Default::default(), wss_url).await.unwrap();
         watcher.start_watching("super_high", false).await.unwrap();
 
         loop {

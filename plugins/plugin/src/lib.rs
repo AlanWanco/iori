@@ -1,6 +1,7 @@
 pub use std::borrow::Cow;
 
 pub use async_trait::async_trait;
+use iori::IoriHttp;
 use iori::raw::RawRemoteSegment;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +10,17 @@ pub use regex::{Captures, Regex};
 
 pub use iori;
 pub use regex;
+
+#[derive(Clone)]
+pub struct ShioriContext {
+    pub http: IoriHttp,
+}
+
+impl ShioriContext {
+    pub fn new(http: IoriHttp) -> Self {
+        Self { http }
+    }
+}
 
 pub trait ShioriPlugin {
     /// Name of the plugin
@@ -126,6 +138,7 @@ pub trait Inspect: Send + Sync {
     /// candidates for further inspection, a redirect, or none.
     async fn inspect(
         &self,
+        context: &ShioriContext,
         url: &str,
         captures: &regex::Captures,
         args: &dyn InspectorArguments,
@@ -142,6 +155,7 @@ pub trait Inspect: Send + Sync {
     /// * `candidate`: The `InspectCandidate` chosen by the user.
     async fn inspect_candidate(
         &self,
+        _context: &ShioriContext,
         _candidate: InspectCandidate,
     ) -> anyhow::Result<InspectResult> {
         Ok(InspectResult::None)

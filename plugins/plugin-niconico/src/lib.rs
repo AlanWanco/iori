@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use shiori_plugin::*;
+use shiori_plugin::{iori::reqwest::ClientBuilder, *};
 
 use iori_nicolive::{
     danmaku::{DanmakuClient, DanmakuList},
@@ -70,10 +70,11 @@ struct NicoLiveInspector;
 impl NicoLiveInspector {
     pub async fn download_danmaku(
         &self,
+        builder: ClientBuilder,
         message_server: WatchMessageMessageServer,
         program_end_time: u64,
     ) -> anyhow::Result<DanmakuList> {
-        let client = DanmakuClient::new(message_server.view_uri).await?;
+        let client = DanmakuClient::new(builder, message_server.view_uri).await?;
         let end_time = program_end_time + 30 * 60;
         let backward = client.get_backward_segment(end_time.to_string()).await?;
         let segment = backward
@@ -96,6 +97,7 @@ impl Inspect for NicoLiveInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         url: &str,
         _captures: &Captures,
         args: &dyn InspectorArguments,
@@ -106,12 +108,22 @@ impl Inspect for NicoLiveInspector {
         let reserve_timeshift = args.get_boolean("nico-reserve-timeshift");
         let danmaku_only = args.get_boolean("nico-danmaku-only");
 
-        let data = NicoEmbeddedData::new(url.to_string(), user_session.as_deref()).await?;
+        let data = NicoEmbeddedData::new(
+            context.http.builder(),
+            url.to_string(),
+            user_session.as_deref(),
+        )
+        .await?;
         let wss_url = if let Some(wss_url) = data.websocket_url() {
             wss_url
         } else if reserve_timeshift {
             data.timeshift_reserve().await?;
-            let data = NicoEmbeddedData::new(url.to_string(), user_session.as_deref()).await?;
+            let data = NicoEmbeddedData::new(
+                context.http.builder(),
+                url.to_string(),
+                user_session.as_deref(),
+            )
+            .await?;
             data.websocket_url()
                 .ok_or_else(|| anyhow::anyhow!("no websocket url"))?
         } else {
@@ -121,7 +133,7 @@ impl Inspect for NicoLiveInspector {
         let best_quality = data.best_quality()?;
         let download_danmaku = download_danmaku || danmaku_only;
 
-        let watcher = WatchClient::new(&wss_url).await?;
+        let watcher = WatchClient::new(context.http.builder(), &wss_url).await?;
         watcher.start_watching(&best_quality, chase_play).await?;
 
         let mut stream: Option<WatchMessageStream> = None;
@@ -176,7 +188,11 @@ impl Inspect for NicoLiveInspector {
 
         if let Some(message_server) = message_server {
             let danmaku = self
-                .download_danmaku(message_server, data.program_end_time())
+                .download_danmaku(
+                    context.http.builder(),
+                    message_server,
+                    data.program_end_time(),
+                )
                 .await?;
             result.push(InspectPlaylist {
                 title: Some(data.program_title()),
@@ -208,6 +224,7 @@ impl Inspect for NicoVideoInspector {
 
     async fn inspect(
         &self,
+        _context: &ShioriContext,
         url: &str,
         _captures: &Captures,
         args: &dyn InspectorArguments,

@@ -1,16 +1,12 @@
-use std::time::Duration;
-
 use iori_radiko::{RadikoClient, RadikoTime};
 use shiori_plugin::{
     iori::{
-        HttpClient, StreamType,
-        context::IoriContext,
-        hls::HlsPlaylistSource,
-        raw::RawRemoteSegment,
-        reqwest::{Client, header::HeaderMap},
+        StreamType, context::IoriContext, hls::HlsPlaylistSource, raw::RawRemoteSegment,
+        reqwest::header::HeaderMap,
     },
     *,
 };
+use std::time::Duration;
 
 pub struct RadikoPlugin;
 
@@ -66,13 +62,14 @@ impl Inspect for RadikoLiveInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         _url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
         let station_id = captures.name("station").unwrap().as_str();
 
-        let mut client = RadikoClient::new();
+        let mut client = RadikoClient::new(context.http.client());
 
         // Get station region
         let region = client.get_station_region(station_id).await?;
@@ -116,6 +113,7 @@ impl Inspect for RadikoTimefreeInspector {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         _url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
@@ -123,7 +121,7 @@ impl Inspect for RadikoTimefreeInspector {
         let station_id = captures.name("station").unwrap().as_str();
         let timestring = captures.name("timestring").unwrap().as_str();
 
-        let mut client = RadikoClient::new();
+        let mut client = RadikoClient::new(context.http.client());
 
         // Parse the timestring
         let time = RadikoTime::from_timestring(timestring)?;
@@ -154,12 +152,16 @@ impl Inspect for RadikoTimefreeInspector {
         // Get station info
         let station_info = client.get_station_info(&region, station_id).await?;
 
-        let mut builder = Client::builder();
+        let mut builder = context.http.builder();
         let mut headers = HeaderMap::new();
         headers.insert("X-Radiko-AuthToken", auth_data.auth_token.parse().unwrap());
         headers.insert("X-Radiko-AreaId", auth_data.area_id.parse().unwrap());
         builder = builder.default_headers(headers);
-        let http_client = HttpClient::new(builder);
+
+        let iori_context = IoriContext {
+            client: builder.build().unwrap(),
+            ..Default::default()
+        };
 
         let mut index = 0;
         let mut all_segments = Vec::new();
@@ -173,17 +175,12 @@ impl Inspect for RadikoTimefreeInspector {
                 return Ok(InspectResult::None);
             }
 
-            let context = IoriContext {
-                client: http_client.clone(),
-                ..Default::default()
-            };
-
             // Use the first available stream URL
             let stream = &stream_urls[0];
             let mut source = HlsPlaylistSource::new(stream.url.clone(), None);
-            let latest_media_sequences = source.load_streams(&context).await?;
+            let latest_media_sequences = source.load_streams(&iori_context).await?;
             let (segments, _) = source
-                .load_segments(&context, &latest_media_sequences)
+                .load_segments(&iori_context, &latest_media_sequences)
                 .await?;
 
             for segment in segments.into_iter().flatten() {

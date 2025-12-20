@@ -4,7 +4,9 @@ use crate::inspect::{
 };
 use clap::Parser;
 use clap_handler::handler;
-use shiori_plugin::{InspectorArguments, InspectorCommand};
+use iori::IoriHttp;
+use reqwest::Client;
+use shiori_plugin::{InspectorArguments, InspectorCommand, ShioriContext};
 use shiori_plugin_gigafile::GigafilePlugin;
 use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_radiko::RadikoPlugin;
@@ -40,9 +42,12 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
 
 #[handler(InspectCommand)]
 async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
+    let context = ShioriContext {
+        http: IoriHttp::new(Client::builder),
+    };
     let (matched_inspector, data) = get_default_external_inspector()
         .wait(this.wait)
-        .inspect(&this.url, &this.inspector_options, |c| {
+        .inspect(&context, &this.url, &this.inspector_options, |c| {
             c.into_iter().next().unwrap()
         })
         .await?;

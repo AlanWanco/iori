@@ -1,7 +1,7 @@
+use crate::{IoriError, IoriResult};
 use chrono::{DateTime, TimeDelta, Utc};
 use dash_mpd::{MPD, UTCTiming};
-
-use crate::{HttpClient, IoriError, IoriResult};
+use reqwest::Client;
 
 #[derive(Debug)]
 pub struct Clock {
@@ -38,7 +38,7 @@ impl Clock {
         tracing::info!(offset_milliseconds = %self.offset.num_milliseconds(), "Clock time set to {}, offset calculated", remote_now);
     }
 
-    pub async fn sync(&mut self, mpd: &MPD, client: &HttpClient) -> IoriResult<()> {
+    pub async fn sync(&mut self, mpd: &MPD, client: &Client) -> IoriResult<()> {
         sync_time(&mpd.UTCTiming, self, client).await
     }
 }
@@ -53,7 +53,7 @@ fn parse_iso8601_response(response_text: &str) -> IoriResult<DateTime<Utc>> {
         })?)
 }
 
-async fn sync_time(timing: &[UTCTiming], clock: &mut Clock, client: &HttpClient) -> IoriResult<()> {
+async fn sync_time(timing: &[UTCTiming], clock: &mut Clock, client: &Client) -> IoriResult<()> {
     if timing.is_empty() {
         tracing::warn!("No UTCTiming elements found in MPD, using local time.");
         clock.set_time(Utc::now(), Utc::now(), Utc::now()); // Default to local time if no timing info

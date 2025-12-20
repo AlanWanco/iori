@@ -38,11 +38,14 @@ impl Inspect for ShortLinkPlugin {
 
     async fn inspect(
         &self,
+        context: &ShioriContext,
         url: &str,
         _captures: &regex::Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
-        let client = reqwest::Client::builder()
+        let client = context
+            .http
+            .builder()
             .danger_accept_invalid_certs(true)
             .redirect(Policy::none())
             .build()?;
