@@ -7,6 +7,7 @@ use reqwest::{
     Client, ClientBuilder,
     header::{COOKIE, HeaderMap, HeaderValue, SET_COOKIE},
 };
+use std::time::SystemTime;
 
 #[derive(Clone)]
 pub struct ShowRoomClient {
@@ -67,10 +68,17 @@ impl ShowRoomClient {
     }
 
     pub async fn onlives(&self) -> anyhow::Result<Vec<OnliveRoomInfo>> {
+        let now: u128 = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
         let data: Onlives = self
             .client
             .get("https://www.showroom-live.com/api/live/onlives")
-            .query(&[("skip_serial_code_live", "1")])
+            .query(&[
+                ("skip_serial_code_live", "1".to_string()),
+                ("_", now.to_string()),
+            ])
             .send()
             .await?
             .json()
