@@ -272,7 +272,7 @@ impl std::fmt::Display for KeyMethod {
 }
 
 // TODO: Remove this once quick-m3u8 is well tested and stable
-#[derive(Debug, Clone, Copy, PartialOrd, Comparable)]
+#[derive(Debug, Clone, Copy, PartialOrd)]
 pub struct F64(f64);
 
 impl PartialEq<F64> for F64 {
@@ -294,5 +294,24 @@ impl Deref for F64 {
 impl From<f64> for F64 {
     fn from(value: f64) -> Self {
         Self(value)
+    }
+}
+
+impl Comparable for F64 {
+    type Desc = f64;
+
+    fn describe(&self) -> Self::Desc {
+        self.0
+    }
+
+    type Change = f64;
+
+    fn comparison(&self, other: &Self) -> comparable::Changed<Self::Change> {
+        let diff = (self.0 - other.0).abs();
+        if diff < 0.1 {
+            comparable::Changed::Unchanged
+        } else {
+            comparable::Changed::Changed(diff)
+        }
     }
 }
