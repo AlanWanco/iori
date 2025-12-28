@@ -86,11 +86,11 @@ where
     T: Args + Clone + Default + Send + Sync + 'static,
 {
     pub fn new(command: DownloadCommand<T>) -> Self {
-        let use_tui = !command.no_tui && stdout().is_terminal();
+        let disable_tui = command.no_tui || !stdout().is_terminal();
 
         Self {
             fallback_app: Arc::new(
-                use_tui.then(|| TracingApp::concurrent(command.download.concurrency)),
+                disable_tui.then_some(TracingApp::concurrent(command.download.concurrency)),
             ),
             command,
             streams: Arc::new(Mutex::new(HashMap::new())),
