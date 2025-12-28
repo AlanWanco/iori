@@ -22,6 +22,7 @@ type SendSegment = (
 /// PipeMerger is a merger that pipes the segments directly to the output.
 ///
 /// If there are any missing segments, it will skip them.
+/// PipeMerger does not and can not handle discontinuities.
 pub struct PipeMerger {
     recycle: bool,
 

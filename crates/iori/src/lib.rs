@@ -58,6 +58,7 @@ pub trait StreamingSource {
     ) -> impl Future<Output = IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>>>;
 }
 
+/// A segment of a streaming source
 pub trait StreamingSegment {
     /// Stream id
     fn stream_id(&self) -> u64;
@@ -66,7 +67,16 @@ pub trait StreamingSegment {
     fn stream_type(&self) -> StreamType;
 
     /// Sequence ID of the segment, starts from 0
+    ///
+    /// It MUST be contiguous and monotonically increasing for a given stream.
     fn sequence(&self) -> u64;
+
+    /// Part index of the segment.
+    ///
+    /// For segments without discontinuities, this defaults to 0.
+    fn part_index(&self) -> u64 {
+        0
+    }
 
     /// File name of the segment
     fn file_name(&self) -> &str;
