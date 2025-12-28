@@ -68,9 +68,14 @@ where
     #[clap(about_ll = "download-wait")]
     pub wait: bool,
 
-    #[clap(long = "experimental-ui", visible_alias = "tui")]
-    #[clap(about_ll = "download-experimental-ui")]
-    pub experimental_ui: bool,
+    /// Hidden option for TUI to keep compatibility with old version.
+    #[clap(long, alias = "experimental-ui")]
+    #[clap(hide = true)]
+    pub tui: bool,
+
+    #[clap(long)]
+    #[clap(about_ll = "download-no-tui")]
+    pub no_tui: bool,
 
     #[clap(flatten)]
     pub inspector_options: I,
@@ -475,6 +480,8 @@ where
                 },
                 ..Default::default()
             },
+            tui: false,
+            no_tui: false,
             url: data.playlist_url,
 
             ..Default::default()

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - UNRELEASED
+
+### Features
+
+- **Release:** Added prebuilt binary for Linux ARM64 (`aarch64-unknown-linux-gnu`).
+- **Decryption:** Added SAMPLE-AES support for MPEG-4.
+- **HLS:** Introduced a new engine `iori-hls` (enabled by default) for better maintainability and performance.
+
+### Fixed
+
+- **MP4:** Upgraded Bento4 to fix decryption issues with certain files.
+- **Performance:** Decryption is now performed off-thread to avoid blocking the async executor.
+- **Merge:** Ensure `mkvmerge` is available before calling it.
+- **Niconico:** Fixed space handling in Live votes.
+- **Merge:** Ignore AppleSingle and AppleDouble metadata files during the merge phase.
+
 ## [0.3.0] - 2025-11-08
 
 ### Features
