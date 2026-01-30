@@ -345,7 +345,7 @@ pub struct OutputOptions {
 
     /// Proxy server bind address (default: 127.0.0.1:8080)
     #[clap(long, default_value = "127.0.0.1:8080")]
-    pub proxy_addr: String,
+    pub proxy_mode_listen: String,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -369,16 +369,18 @@ pub struct OutputModeOptions {
 
     #[clap(long)]
     #[clap(about_ll = "download-output-experimental-proxy")]
-    pub proxy: bool,
+    pub proxy_mode: bool,
 }
 
 impl OutputOptions {
     pub fn into_merger(self) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
         Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
-        } else if self.output_mode.proxy {
-            let addr: std::net::SocketAddr =
-                self.proxy_addr.parse().expect("Invalid proxy address");
+        } else if self.output_mode.proxy_mode {
+            let addr: std::net::SocketAddr = self
+                .proxy_mode_listen
+                .parse()
+                .expect("Invalid proxy mode listen address");
             IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
