@@ -51,12 +51,12 @@ impl ShioriPlugin for NiconicoPlugin {
 
     fn register(&self, registry: &mut dyn InspectorRegistry) -> anyhow::Result<()> {
         registry.register_inspector(
-            Regex::new(r"https://live\.nicovideo\.jp/watch/lv.*").unwrap(),
+            Regex::new(r"https://live\.nicovideo\.jp/watch/(?P<live_id>lv\d+)").unwrap(),
             Box::new(NicoLiveInspector),
             PriorityHint::Normal,
         );
         registry.register_inspector(
-            Regex::new(r"https://www\.nicovideo\.jp/watch/(?:so|sm).*").unwrap(),
+            Regex::new(r"https://www\.nicovideo\.jp/watch/(?P<video_id>(?:so|sm)\d+)").unwrap(),
             Box::new(NicoVideoInspector),
             PriorityHint::Normal,
         );
@@ -114,6 +114,9 @@ impl Inspect for NicoLiveInspector {
             user_session.as_deref(),
         )
         .await?;
+        let channel_id = data.channel_id()?;
+        let program_id = data.program_id();
+
         let wss_url = if let Some(wss_url) = data.websocket_url() {
             wss_url
         } else if reserve_timeshift {
@@ -175,6 +178,18 @@ impl Inspect for NicoLiveInspector {
         });
 
         let mut result = vec![];
+        // If chase_play is enabled, we're watching a live stream from the start
+        // Otherwise it could be live or timeshift - use Live as default for nicolive
+        let content_type = if chase_play {
+            ContentType::Live
+        } else {
+            ContentType::Archive
+        };
+        let source = InspectSource::new("niconico", content_type)
+            .with_channel_id(&channel_id)
+            .with_content_id(&program_id)
+            .with_original_url(url);
+
         if !danmaku_only {
             result.push(InspectPlaylist {
                 title: Some(data.program_title()),
@@ -182,6 +197,7 @@ impl Inspect for NicoLiveInspector {
                 playlist_type: PlaylistType::HLS,
                 cookies: stream.cookies.into_cookies(),
                 streams_hint: Some(2),
+                source: Some(source.clone()),
                 ..Default::default()
             });
         }
@@ -199,6 +215,7 @@ impl Inspect for NicoLiveInspector {
                 playlist_url: "danmaku.json".to_string(),
                 playlist_type: PlaylistType::RawData,
                 initial_playlist_data: Some(danmaku.to_json(true)?),
+                source: Some(source.clone()),
                 ..Default::default()
             });
             match danmaku.to_ass() {
@@ -208,6 +225,7 @@ impl Inspect for NicoLiveInspector {
                         playlist_url: "danmaku.ass".to_string(),
                         playlist_type: PlaylistType::RawData,
                         initial_playlist_data: Some(ass_data),
+                        source: Some(source.clone()),
                         ..Default::default()
                     });
                 }
@@ -233,9 +251,13 @@ impl Inspect for NicoVideoInspector {
         &self,
         context: &ShioriContext,
         url: &str,
-        _captures: &Captures,
+        captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
+        let video_id = captures
+            .name("video_id")
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         let user_session = args.get_string("nico-user-session");
         let data =
             NivoServerResponse::new(context.http.builder(), url, user_session.as_deref()).await?;
@@ -245,6 +267,11 @@ impl Inspect for NicoVideoInspector {
             playlist_url,
             playlist_type: PlaylistType::HLS,
             headers: vec![format!("Cookie: {cookies}")],
+            source: Some(
+                InspectSource::new("niconico", ContentType::Video)
+                    .with_content_id(video_id)
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }]))
     }

@@ -99,6 +99,15 @@ impl NicoEmbeddedData {
             .and_then(|id| id.as_i64())
     }
 
+    pub fn program_id(&self) -> String {
+        self.data
+            .get("program")
+            .and_then(|program| program.get("nicoliveProgramId"))
+            .and_then(|id| id.as_str())
+            .map(|id| id.to_string())
+            .unwrap()
+    }
+
     pub fn program_title(&self) -> String {
         self.data
             .get("program")
@@ -148,6 +157,28 @@ impl NicoEmbeddedData {
             .ok_or_else(|| anyhow::anyhow!("no max quality"))?;
 
         Ok(quality.to_string())
+    }
+
+    pub fn channel_id(&self) -> anyhow::Result<String> {
+        let channel_id = self
+            .data
+            .get("socialGroup")
+            .and_then(|site| site.get("id"))
+            .and_then(|id| id.as_str())
+            .ok_or_else(|| anyhow::anyhow!("no channel id"))?;
+
+        Ok(channel_id.to_string())
+    }
+
+    pub fn channel_name(&self) -> anyhow::Result<String> {
+        let channel_name = self
+            .data
+            .get("socialGroup")
+            .and_then(|site| site.get("name"))
+            .and_then(|name| name.as_str())
+            .ok_or_else(|| anyhow::anyhow!("no channel name"))?;
+
+        Ok(channel_name.to_string())
     }
 }
 

@@ -51,7 +51,7 @@ impl Inspect for ShowroomLiveInspector {
     async fn inspect(
         &self,
         context: &ShioriContext,
-        _url: &str,
+        url: &str,
         captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
@@ -81,6 +81,12 @@ impl Inspect for ShowroomLiveInspector {
             title: Some(info.room_name),
             playlist_url: stream.url.clone(),
             playlist_type: PlaylistType::HLS,
+            source: Some(
+                InspectSource::new("showroom", ContentType::Live)
+                    .with_channel_id(room_id.to_string())
+                    .with_content_id(info.live_id.to_string())
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }))
     }
@@ -98,7 +104,7 @@ impl Inspect for ShowroomTimeshiftInspector {
     async fn inspect(
         &self,
         context: &ShioriContext,
-        _url: &str,
+        url: &str,
         captures: &Captures,
         args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
@@ -120,6 +126,12 @@ impl Inspect for ShowroomTimeshiftInspector {
             title: Some(timeshift_info.timeshift.title),
             playlist_url: stream.url().to_string(),
             playlist_type: PlaylistType::HLS,
+            source: Some(
+                InspectSource::new("showroom", ContentType::Archive)
+                    .with_channel_id(timeshift_info.timeshift.room_id.to_string())
+                    .with_content_id(timeshift_info.timeshift.live_id.to_string())
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }))
     }

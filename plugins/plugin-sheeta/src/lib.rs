@@ -61,7 +61,7 @@ impl Inspect for SheetaInspector {
     async fn inspect(
         &self,
         context: &ShioriContext,
-        _url: &str,
+        url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
@@ -85,6 +85,11 @@ impl Inspect for SheetaInspector {
                 format!("Referer: {}", client.origin()),
                 format!("Origin: {}", client.origin()),
             ],
+            source: Some(
+                InspectSource::new(host, ContentType::Video)
+                    .with_content_id(video_id)
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }))
     }

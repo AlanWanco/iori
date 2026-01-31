@@ -178,6 +178,78 @@ pub trait InspectorArguments: Send + Sync {
     fn get_boolean(&self, argument: &'static str) -> bool;
 }
 
+/// The type of content being inspected.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub enum ContentType {
+    /// Real-time streaming content
+    Live,
+    /// Archived/recorded content (timeshift, timefree)
+    Archive,
+    /// Video on demand / uploaded video
+    #[default]
+    Video,
+    /// Raw file download
+    File,
+}
+
+/// Source identification for inspected content.
+///
+/// This struct provides a unified way to identify content across different platforms
+/// using common fields that can be used for categorization and deduplication.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct InspectSource {
+    /// Platform identifier (e.g., "showroom", "niconico", "radiko")
+    pub platform: String,
+
+    /// Persistent container identifier (e.g., room_id, station_id)
+    ///
+    /// This represents a channel or room that can host multiple streams/videos over time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+
+    /// Specific content identifier (e.g., live_id, video_id, timestring)
+    ///
+    /// This identifies a specific piece of content within the platform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_id: Option<String>,
+
+    /// Type of content
+    pub content_type: ContentType,
+
+    /// The original URL that was inspected
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_url: Option<String>,
+}
+
+impl InspectSource {
+    /// Create a new InspectSource with required fields.
+    pub fn new(platform: impl Into<String>, content_type: ContentType) -> Self {
+        Self {
+            platform: platform.into(),
+            content_type,
+            ..Default::default()
+        }
+    }
+
+    /// Set the channel identifier.
+    pub fn with_channel_id(mut self, channel: impl Into<String>) -> Self {
+        self.channel_id = Some(channel.into());
+        self
+    }
+
+    /// Set the content identifier.
+    pub fn with_content_id(mut self, content_id: impl Into<String>) -> Self {
+        self.content_id = Some(content_id.into());
+        self
+    }
+
+    /// Set the original URL.
+    pub fn with_original_url(mut self, url: impl Into<String>) -> Self {
+        self.original_url = Some(url.into());
+        self
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum InspectResult {
     /// This site handler can not handle this URL
@@ -228,6 +300,12 @@ pub struct InspectPlaylist {
 
     /// Hints how many streams does this playlist contains.
     pub streams_hint: Option<u32>,
+
+    /// Source identification for the content
+    ///
+    /// Contains platform-agnostic identifiers for categorization and deduplication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<InspectSource>,
 }
 
 pub trait InspectorApp {

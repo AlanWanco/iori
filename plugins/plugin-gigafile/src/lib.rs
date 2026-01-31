@@ -46,11 +46,11 @@ impl Inspect for GigafileInspector {
     ) -> anyhow::Result<InspectResult> {
         let key = args.get_string("giga-key");
         let client = GigafileClient::new(context.http.client(), key);
-        let (url, cookie) = client.get_download_url(url.try_into()?).await?;
+        let (download_url, cookie) = client.get_download_url(url.try_into()?).await?;
 
         let client = context.http.client();
         let response = client
-            .get(&url)
+            .get(&download_url)
             .header(COOKIE, &cookie)
             .header(USER_AGENT, get_chrome_rua())
             .send()
@@ -68,9 +68,10 @@ impl Inspect for GigafileInspector {
 
         Ok(InspectResult::Playlist(InspectPlaylist {
             title: filename,
-            playlist_url: url,
+            playlist_url: download_url,
             playlist_type: PlaylistType::Http,
             headers: vec![format!("Cookie: {cookie}")],
+            source: Some(InspectSource::new("gigafile", ContentType::File).with_original_url(url)),
             ..Default::default()
         }))
     }

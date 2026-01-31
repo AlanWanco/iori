@@ -63,7 +63,7 @@ impl Inspect for RadikoLiveInspector {
     async fn inspect(
         &self,
         context: &ShioriContext,
-        _url: &str,
+        url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
@@ -98,6 +98,11 @@ impl Inspect for RadikoLiveInspector {
                 format!("X-Radiko-AuthToken: {}", auth_data.auth_token),
                 format!("X-Radiko-AreaId: {}", auth_data.area_id),
             ],
+            source: Some(
+                InspectSource::new("radiko", ContentType::Live)
+                    .with_channel_id(station_id)
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }))
     }
@@ -114,7 +119,7 @@ impl Inspect for RadikoTimefreeInspector {
     async fn inspect(
         &self,
         context: &ShioriContext,
-        _url: &str,
+        url: &str,
         captures: &Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
@@ -213,6 +218,12 @@ impl Inspect for RadikoTimefreeInspector {
                 format!("X-Radiko-AuthToken: {}", auth_data.auth_token),
                 format!("X-Radiko-AreaId: {}", auth_data.area_id),
             ],
+            source: Some(
+                InspectSource::new("radiko", ContentType::Archive)
+                    .with_channel_id(station_id)
+                    .with_content_id(timestring)
+                    .with_original_url(url),
+            ),
             ..Default::default()
         }))
     }
