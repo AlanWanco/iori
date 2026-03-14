@@ -13,6 +13,9 @@ use crate::{
 
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
+    /// If set, only keep the last N segments from the first playlist fetch.
+    /// Useful for reducing initial latency when piping to ffmpeg for restreaming.
+    initial_segment_limit: Option<usize>,
 }
 
 impl HlsLiveSource {
@@ -22,7 +25,16 @@ impl HlsLiveSource {
                 Url::parse(&m3u8_url)?,
                 key,
             ))),
+            initial_segment_limit: None,
         })
+    }
+
+    /// Set the maximum number of segments to keep from the first playlist fetch.
+    /// Only the last `limit` segments will be downloaded initially;
+    /// subsequent fetches continue from there as normal.
+    pub fn with_initial_segment_limit(mut self, limit: Option<usize>) -> Self {
+        self.initial_segment_limit = limit;
+        self
     }
 }
 
@@ -39,14 +51,16 @@ impl StreamingSource for HlsLiveSource {
 
         let playlist = self.playlist.clone();
         let context = context.clone();
+        let initial_segment_limit = self.initial_segment_limit;
         tokio::spawn(async move {
+            let mut is_first_fetch = true;
             loop {
                 if sender.is_closed() {
                     break;
                 }
 
                 let before_load = tokio::time::Instant::now();
-                let (segments, is_end) = match playlist
+                let (mut segments, is_end) = match playlist
                     .lock()
                     .await
                     .load_segments(&context, &latest_media_sequences)
@@ -62,6 +76,42 @@ impl StreamingSource for HlsLiveSource {
                         break;
                     }
                 };
+
+                // On the first fetch, truncate each stream's segments to the last N
+                // so that we start close to the live edge instead of from the beginning.
+                if is_first_fetch {
+                    is_first_fetch = false;
+                    if let Some(limit) = initial_segment_limit {
+                        let mut new_sequence_starts = Vec::with_capacity(segments.len());
+                        let mut did_truncate = false;
+                        for stream_segments in segments.iter_mut() {
+                            let len = stream_segments.len();
+                            if len > limit {
+                                let skipped = len - limit;
+                                tracing::info!(
+                                    "Initial segment limit: keeping last {limit} of {len} segments (skipping {skipped})"
+                                );
+                                *stream_segments = stream_segments.split_off(skipped);
+                                // Re-number sequences starting from 0 so that
+                                // OrderedStream (which expects seq to start at 0)
+                                // can output them immediately.
+                                for (i, seg) in stream_segments.iter_mut().enumerate() {
+                                    seg.sequence = i as u64;
+                                }
+                                new_sequence_starts.push(stream_segments.len() as u64);
+                                did_truncate = true;
+                            } else {
+                                new_sequence_starts.push(stream_segments.len() as u64);
+                            }
+                        }
+                        // Reset the source's internal sequence counters so that
+                        // subsequent fetches produce sequences continuing from
+                        // where the truncated batch left off.
+                        if did_truncate {
+                            playlist.lock().await.reset_stream_sequences(&new_sequence_starts);
+                        }
+                    }
+                }
 
                 let segments_average_duration = segments
                     .iter()

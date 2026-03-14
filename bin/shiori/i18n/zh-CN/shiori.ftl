@@ -17,6 +17,12 @@ download-concurrency = 并发数
 download-segment-retries = 分块下载重试次数
 # download-segment-retry-delay = 设置下载失败后重试的延迟，单位为秒
 download-manifest-retries = manifest 下载重试次数
+download-initial-segments =
+    仅保留首次拉取播放列表时的最后 N 个分片。
+
+    用于减少拥有较长 VOD 缓冲的直播流的启动延迟
+    （例如在通过管道将流传递给 ffmpeg 进行转播时）。
+    如果播放列表中分片数少于 N，则保留全部分片。
 
 download-cache-in-menory-cache = 使用内存缓存，下载时不将缓存写入磁盘
 download-cache-temp-dir =

@@ -341,4 +341,15 @@ impl HlsPlaylistSource {
 
         Ok((segments, is_end))
     }
+
+    /// Reset the internal sequence counters for each stream.
+    ///
+    /// This is used after truncating the initial segment list so that
+    /// subsequent fetches produce sequence numbers that continue from
+    /// where the truncated list left off, keeping `OrderedStream` happy.
+    pub fn reset_stream_sequences(&self, values: &[u64]) {
+        for (stream, &val) in self.streams.iter().zip(values.iter()) {
+            stream.sequence.store(val, Ordering::Relaxed);
+        }
+    }
 }

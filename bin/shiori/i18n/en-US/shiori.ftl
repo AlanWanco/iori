@@ -17,6 +17,12 @@ download-concurrency = Threads limit
 download-segment-retries = Segment retry limit
 # download-segment-retry-delay = Set retry delay after download fails in seconds
 download-manifest-retries = Manifest retry limit
+download-initial-segments =
+    Only keep the last N segments from the initial playlist fetch.
+
+    Reduces startup latency for live streams with a long VOD buffer
+    (e.g. when piping to ffmpeg for restreaming).
+    If the playlist has fewer segments than N, all segments are kept.
 
 download-cache-in-menory-cache = Use in-memory cache and do not write cache to disk while downloading
 download-cache-temp-dir =

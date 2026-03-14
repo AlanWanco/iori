@@ -127,7 +127,8 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
+                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                    .with_initial_segment_limit(self.download.initial_segments);
                 downloader.download(source).await?;
             }
             PlaylistType::DASH => {
@@ -245,6 +246,10 @@ pub struct DownloadOptions {
     #[clap(long, default_value = "3")]
     #[clap(about_ll = "download-manifest-retries")]
     pub manifest_retries: u32,
+
+    #[clap(about_ll = "download-initial-segments")]
+    #[clap(long)]
+    pub initial_segments: Option<usize>,
 }
 
 impl Default for DownloadOptions {
@@ -253,6 +258,7 @@ impl Default for DownloadOptions {
             concurrency: NonZeroU32::new(5).unwrap(),
             segment_retries: 5,
             manifest_retries: 3,
+            initial_segments: None,
         }
     }
 }

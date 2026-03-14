@@ -128,6 +128,12 @@ pub struct MinyamiArgs {
     pub range: SegmentRange,
 
     /// [Iori Argument]
+    /// Only keep the last N segments from the initial playlist fetch in live mode.
+    /// Reduces startup latency for live streams with a long VOD buffer.
+    #[clap(long)]
+    pub initial_segments: Option<usize>,
+
+    /// [Iori Argument]
     /// Timeout seconds for each manifest/segment request.
     /// Defaults to 10 seconds.
     #[clap(long, default_value = "10")]
@@ -339,7 +345,8 @@ impl MinyamiArgs {
             }
             // HLS Live
             (false, true) => {
-                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
+                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?
+                    .with_initial_segment_limit(self.initial_segments);
                 self.download(http, source, cache).await?;
             }
             // HLS Archive
