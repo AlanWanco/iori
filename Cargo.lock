@@ -2124,6 +2124,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "iori-eplus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "iori",
+ "log",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "iori-ffmpeg"
 version = "0.0.1"
 dependencies = [
@@ -3849,6 +3863,7 @@ dependencies = [
  "i18n-embed",
  "i18n-embed-fl",
  "iori",
+ "iori-eplus",
  "iori-ffmpeg",
  "iori-gigafile",
  "iori-nicolive",
@@ -3864,6 +3879,7 @@ dependencies = [
  "self_update",
  "serde",
  "shiori-plugin",
+ "shiori-plugin-eplus",
  "shiori-plugin-gigafile",
  "shiori-plugin-niconico",
  "shiori-plugin-radiko",
@@ -3886,6 +3902,16 @@ dependencies = [
  "iori",
  "regex",
  "serde",
+]
+
+[[package]]
+name = "shiori-plugin-eplus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "iori-eplus",
+ "log",
+ "shiori-plugin",
 ]
 
 [[package]]

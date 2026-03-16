@@ -90,7 +90,29 @@ where
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
+
+        // For eplus, cookies from the inspect phase include both CDN-domain cookies
+        // (CloudFront, for stream.live.eplus.jp) and session cookies (for live.eplus.jp).
+        // `into_client` adds all of them under the playlist URL domain (the CDN domain).
+        // We need to also add them under the event URL domain so the cookie refresh task
+        // can send session cookies when re-fetching the event page.
+        let eplus_event_cookies = if self.extra.platform.as_deref() == Some("eplus") {
+            self.extra
+                .original_url
+                .as_ref()
+                .map(|event_url| (self.http.cookies.clone(), event_url.clone()))
+        } else {
+            None
+        };
+
         let http = self.http.into_client(&self.url);
+
+        // Add cookies to the event URL domain so reqwest sends session cookies
+        // when the refresh task GETs the event page.
+        if let Some((cookies, event_url)) = &eplus_event_cookies {
+            http.add_cookies(cookies.clone(), event_url);
+        }
+
         let context = IoriContext {
             client: http.client(),
             shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
@@ -127,9 +149,39 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
-                    .with_initial_segment_limit(self.download.initial_segments);
-                downloader.download(source).await?;
+                let is_eplus = self.extra.platform.as_deref() == Some("eplus");
+                if is_eplus {
+                    if let Some(event_url) = self.extra.original_url {
+                        // Use EplusSource which wraps HlsLiveSource with cookie refresh.
+                        // The IoriHttp `http` has all cookies (session + CloudFront) from
+                        // the inspect phase. EplusSource will use it to build its own
+                        // IoriContext with the shared cookie store, and spawn a background
+                        // task that periodically re-fetches the event page to refresh
+                        // CloudFront cookies.
+                        let source = iori_eplus::source::EplusSource::new(
+                            http,
+                            self.url,
+                            event_url,
+                            self.decrypt.key.as_deref(),
+                        )?
+                        .with_initial_segment_limit(self.download.initial_segments);
+                        downloader.download(source).await?;
+                    } else {
+                        log::warn!(
+                            "[eplus] No event URL found for cookie refresh, \
+                             falling back to standard HLS source."
+                        );
+                        let source =
+                            HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                                .with_initial_segment_limit(self.download.initial_segments);
+                        downloader.download(source).await?;
+                    }
+                } else {
+                    let source =
+                        HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                            .with_initial_segment_limit(self.download.initial_segments);
+                    downloader.download(source).await?;
+                }
             }
             PlaylistType::DASH => {
                 let source = CommonDashLiveSource::new(
@@ -333,6 +385,10 @@ pub struct ExtraOptions {
     /// Force Dash mode
     pub playlist_type: Option<PlaylistType>,
     pub initial_playlist_data: Option<String>,
+    /// Platform identifier from InspectSource (e.g., "eplus", "niconico")
+    pub platform: Option<String>,
+    /// Original URL from InspectSource, used for cookie refresh etc.
+    pub original_url: Option<String>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -479,6 +535,11 @@ where
             extra: ExtraOptions {
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
+                platform: data.source.as_ref().map(|s| s.platform.clone()),
+                original_url: data
+                    .source
+                    .as_ref()
+                    .and_then(|s| s.original_url.clone()),
             },
             output: OutputOptions {
                 output: data.title.map(|title| sanitize(&title).into()),

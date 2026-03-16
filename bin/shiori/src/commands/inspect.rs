@@ -12,6 +12,7 @@ use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_radiko::RadikoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
+use shiori_plugin_eplus::EplusPlugin;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "inspect", short_flag = 'S')]
@@ -34,6 +35,7 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
         .add(SheetaPlugin)
         .add(GigafilePlugin)
         .add(RadikoPlugin)
+        .add(EplusPlugin)
         .add(HlsPlugin)
         .add(DashPlugin);
 

@@ -41,6 +41,18 @@ impl IoriHttp {
         }
     }
 
+    /// Export all cookies in the store as `name=value` strings for a given URL.
+    ///
+    /// This returns cookies that would be sent in a request to the given URL,
+    /// respecting domain and path matching rules.
+    pub fn export_cookies_for_url(&self, url: impl IntoUrl) -> Vec<String> {
+        let url: url::Url = url.into_url().unwrap();
+        let lock = self.cookies_store.lock().unwrap();
+        lock.get_request_values(&url)
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect()
+    }
+
     pub fn builder(&self) -> ClientBuilder {
         let cookies_store = self.cookies_store.clone();
         (self.builder)().cookie_provider(cookies_store)
