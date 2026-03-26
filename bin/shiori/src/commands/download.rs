@@ -214,6 +214,9 @@ where
         self.url = from.url;
         self.http.headers.extend(from.http.headers);
         self.http.cookies.extend(from.http.cookies);
+        if self.http.proxy.is_none() {
+            self.http.proxy = from.http.proxy;
+        }
         if self.decrypt.key.is_none() {
             self.decrypt.key = from.decrypt.key;
         }
@@ -243,6 +246,10 @@ pub struct HttpOptions {
     #[clap(long, visible_alias = "http1")]
     #[clap(about_ll = "download-http-http1-only")]
     pub http1_only: bool,
+
+    #[clap(long = "proxy")]
+    #[clap(about_ll = "download-http-proxy")]
+    pub proxy: Option<String>,
 }
 
 impl HttpOptions {
@@ -257,6 +264,7 @@ impl HttpOptions {
             );
         }
 
+        let proxy = self.proxy.clone();
         let client = IoriHttp::new(move || {
             let mut builder = Client::builder()
                 .default_headers(headers.clone())
@@ -266,6 +274,9 @@ impl HttpOptions {
                 .danger_accept_invalid_certs(true);
             if self.http1_only {
                 builder = builder.http1_only().http1_title_case_headers();
+            }
+            if let Some(proxy) = &proxy {
+                builder = builder.proxy(reqwest::Proxy::all(proxy).expect("Invalid proxy"));
             }
             builder
         });
@@ -281,6 +292,7 @@ impl Default for HttpOptions {
             cookies: Vec::new(),
             timeout: 10,
             http1_only: false,
+            proxy: None,
         }
     }
 }

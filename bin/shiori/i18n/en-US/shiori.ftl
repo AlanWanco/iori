@@ -12,6 +12,7 @@ download-http-cookies =
     Do not use this option unless you know what you are doing.
 download-http-timeout = HTTP timeout, in seconds
 download-http-http1-only = Force to use HTTP/1.1 for requests
+download-http-proxy = Use the specified HTTP/HTTPS/SOCKS5 proxy
 
 download-concurrency = Threads limit
 download-segment-retries = Segment retry limit
