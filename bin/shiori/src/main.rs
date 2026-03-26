@@ -27,6 +27,8 @@ impl FormatTime for TimeOnly {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    shiori::init_tui_logger();
+
     tracing_subscriber::fmt()
         .with_timer(TimeOnly)
         .with_target(false)
@@ -37,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
                 .try_from_env()
                 .unwrap_or_else(|_| "info,i18n_embed=off".into()),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(shiori::SmartWriter)
         .init();
 
     ShioriArgs::parse().run().await

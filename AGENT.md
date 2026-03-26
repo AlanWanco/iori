@@ -46,3 +46,9 @@ ffmpeg -f mpegts -i pipe:0 -c copy -flvflags no_duration_filesize -f flv "rtmp:/
 - `bin/shiori/i18n/zh-CN/shiori.ftl`
 - `bin/minyami/src/main.rs`
 - `platforms/nicolive/src/source.rs`
+
+## Agent 工作规范 / Agent Workflow Rules
+
+### 1. 版本号管理 (Version Management)
+- **规则**: 每次完成代码修改后，必须更新 `/Users/alanwanco/Workspace/iori/.versions/shiori` 文件。
+- **格式**: 在 `0.3.0` 后面追加当前最新的 git commit hash，例如 `shiori-v0.3.0-<commit_hash>` (如 `shiori-v0.3.0-fc5d92`)。

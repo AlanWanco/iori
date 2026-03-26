@@ -87,6 +87,7 @@ where
 {
     pub fn new(command: DownloadCommand<T>) -> Self {
         let disable_tui = command.no_tui || !stdout().is_terminal();
+        crate::USE_TUI.store(!disable_tui, Ordering::Relaxed);
 
         Self {
             fallback_app: Arc::new(
@@ -142,6 +143,15 @@ where
 
     pub async fn run_tui_loop(&self) -> io::Result<()> {
         let mut stdout = io::stdout();
+
+        if let Some(mut rx) = crate::TUI_LOG_RX.lock().unwrap().take() {
+            let last_log = self.last_log.clone();
+            tokio::spawn(async move {
+                while let Some(msg) = rx.recv().await {
+                    *last_log.lock().await = Some(msg);
+                }
+            });
+        }
 
         // Calculate required lines for TUI
         let required_lines = self.get_display_lines(self.streams.lock().await.len());
