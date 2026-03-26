@@ -71,6 +71,7 @@ impl ProxyMerger {
                 get(serve_stream_playlist),
             )
             .route("/segment/{stream_id}/{sequence}", get(serve_segment))
+            .route("/stream/{stream_id}/init.mp4", get(serve_init_segment))
             .with_state(AppState {
                 segments,
                 segment_paths,
@@ -123,7 +124,7 @@ async fn serve_playlist(State(state): State<AppState>) -> Result<impl IntoRespon
     // Multiple streams: generate master playlist
     let mut master = String::new();
     master.push_str("#EXTM3U\n");
-    master.push_str("#EXT-X-VERSION:3\n");
+    master.push_str("#EXT-X-VERSION:7\n");
 
     for stream_id in stream_ids {
         // Determine stream type and attributes
@@ -131,11 +132,11 @@ async fn serve_playlist(State(state): State<AppState>) -> Result<impl IntoRespon
         if let Some(first_segment) = stream_segments.values().next() {
             match first_segment.stream_type {
                 crate::StreamType::Video => {
-                    master.push_str("#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n");
+                    master.push_str("#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO=\"audio\"\n");
                 }
                 crate::StreamType::Audio => {
                     master.push_str(&format!(
-                        r#"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Audio",DEFAULT=YES,URI="stream/{}/playlist.m3u8"\n"#,
+                        "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio\",DEFAULT=YES,URI=\"stream/{}/playlist.m3u8\"\n",
                         stream_id
                     ));
                     continue;
@@ -179,9 +180,26 @@ fn generate_media_playlist(
 ) -> String {
     let mut playlist = String::new();
     playlist.push_str("#EXTM3U\n");
-    playlist.push_str("#EXT-X-VERSION:3\n");
-    playlist.push_str("#EXT-X-TARGETDURATION:10\n"); // TODO: validate whether this is correct
+    playlist.push_str("#EXT-X-VERSION:7\n");
+    
+    // Calculate max duration for target duration
+    let max_duration = segments
+        .values()
+        .filter_map(|s| s.duration)
+        .fold(1.0f64, f64::max)
+        .ceil() as u64;
+    playlist.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", max_duration));
     playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+
+    // Check for initialization segment for fMP4/DASH
+    if let Some(first) = segments.values().next() {
+        match &first.initial_segment {
+            crate::InitialSegment::Clear(_) | crate::InitialSegment::Encrypted(_) => {
+                playlist.push_str(&format!("#EXT-X-MAP:URI=\"/stream/{}/init.mp4\"\n", stream_id));
+            }
+            crate::InitialSegment::None => {}
+        }
+    }
 
     // Calculate discontinuity sequence
     // Discontinuity occurs when:
@@ -226,8 +244,8 @@ fn generate_media_playlist(
     if discontinuity_sequence > 0 {
         let header = format!("#EXT-X-DISCONTINUITY-SEQUENCE:{}\n", discontinuity_sequence);
         // Insert after version line
-        let parts: Vec<&str> = playlist.split("#EXT-X-VERSION:3\n").collect();
-        playlist = format!("{}#EXT-X-VERSION:3\n{}{}", parts[0], header, parts[1]);
+        let parts: Vec<&str> = playlist.split("#EXT-X-VERSION:7\n").collect();
+        playlist = format!("{}#EXT-X-VERSION:7\n{}{}", parts[0], header, parts[1]);
     }
 
     // Add endlist tag if stream is finished
@@ -273,6 +291,27 @@ async fn serve_segment(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(data))
+        .unwrap())
+}
+
+async fn serve_init_segment(
+    State(state): State<AppState>,
+    Path(stream_id): Path<u64>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let segments = state.segments.read().await;
+    let stream_segments = segments.get(&stream_id).ok_or(StatusCode::NOT_FOUND)?;
+    
+    let first_segment = stream_segments.values().next().ok_or(StatusCode::NOT_FOUND)?;
+    
+    let data = match &first_segment.initial_segment {
+        crate::InitialSegment::Clear(data) | crate::InitialSegment::Encrypted(data) => data.clone(),
+        crate::InitialSegment::None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "video/mp4")
+        .body(Body::from(data.as_slice().to_vec()))
         .unwrap())
 }
 
