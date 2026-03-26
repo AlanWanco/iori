@@ -192,11 +192,7 @@ impl PipeMerger {
                             if c == '\r' || c == '\n' {
                                 let trimmed = line.trim();
                                 if !trimmed.is_empty() {
-                                    if trimmed.starts_with("frame=") || trimmed.starts_with("size=") {
-                                        tracing::info!("[ffmpeg] {}", trimmed);
-                                    } else {
-                                        tracing::debug!("[ffmpeg] {}", trimmed);
-                                    }
+                                    tracing::info!("[ffmpeg] {}", trimmed);
                                 }
                                 line.clear();
                             } else {
