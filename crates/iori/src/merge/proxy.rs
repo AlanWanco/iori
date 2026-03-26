@@ -54,19 +54,6 @@ impl ProxyMerger {
         };
 
         result.start_server();
-        
-        let local_ip = if addr.ip().is_unspecified() {
-            "127.0.0.1".to_string()
-        } else {
-            addr.ip().to_string()
-        };
-        
-        eprintln!("=======================================================");
-        eprintln!("🔥 Proxy Server Started!");
-        eprintln!("👉 Please open your video player (VLC, mpv, etc.) or browser with:");
-        eprintln!("   http://{}:{}/playlist.m3u8", local_ip, addr.port());
-        eprintln!("=======================================================\n");
-
         result
     }
 
