@@ -138,7 +138,11 @@ where
 
     fn get_display_lines(&self, stream_count: usize) -> usize {
         // Base lines + 1 line per stream for progress bar
-        BASE_DISPLAY_LINES + stream_count
+        let mut lines = BASE_DISPLAY_LINES + stream_count;
+        if self.command.output.output_mode.proxy_mode {
+            lines += 1;
+        }
+        lines
     }
 
     pub async fn run_tui_loop(&self) -> io::Result<()> {
@@ -487,6 +491,27 @@ where
             ResetColor,
             Print("\n")
         )?;
+
+        // Line 7: Proxy Mode
+        if self.command.output.output_mode.proxy_mode {
+            let bind_addr = self.command.output.proxy_mode_listen.clone();
+            let local_ip = if bind_addr.starts_with("0.0.0.0") {
+                bind_addr.replace("0.0.0.0", "127.0.0.1")
+            } else {
+                bind_addr
+            };
+            execute!(
+                stdout,
+                cursor::MoveToColumn(0),
+                Clear(ClearType::CurrentLine),
+                SetForegroundColor(CColor::Blue),
+                Print("│ "),
+                SetForegroundColor(CColor::Cyan),
+                Print(format!("🌐 Proxy Server: http://{}/playlist.m3u8", local_ip)),
+                ResetColor,
+                Print("\n")
+            )?;
+        }
 
         // Bottom border
         let status_icon = if running { "⏵" } else { "■" };
