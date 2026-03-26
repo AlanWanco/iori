@@ -1,5 +1,5 @@
 use comparable::Comparable;
-use quick_m3u8::tag::{DecimalResolution, hls};
+use quick_m3u8::tag::{hls, DecimalResolution};
 use std::{borrow::Cow, ops::Deref};
 
 #[derive(Debug, Clone, PartialEq, Comparable)]

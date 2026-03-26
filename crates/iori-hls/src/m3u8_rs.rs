@@ -1,4 +1,4 @@
-use crate::{M3u8ParseError, models::*};
+use crate::{models::*, M3u8ParseError};
 
 impl From<m3u8_rs::Playlist> for Playlist {
     fn from(value: m3u8_rs::Playlist) -> Self {
