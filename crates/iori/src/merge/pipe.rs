@@ -171,7 +171,12 @@ impl PipeMerger {
                 if let Some(dest) = extra_command.and_then(|s| shlex::split(&s)) {
                     command.args(dest);
                 } else {
-                    command.args(["-f", "mpegts", "-shortest"]).arg(output);
+                    let output_str = output.to_string_lossy();
+                    if output_str.starts_with("rtmp://") {
+                        command.args(["-f", "flv"]).arg(output);
+                    } else {
+                        command.args(["-f", "mpegts", "-shortest"]).arg(output);
+                    }
                 }
 
                 let mut process = command.spawn().unwrap();
