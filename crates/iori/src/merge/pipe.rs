@@ -207,7 +207,18 @@ impl PipeMerger {
                 });
 
                 tokio::spawn(async move {
-                    process.wait().await.unwrap();
+                    match process.wait().await {
+                        Ok(status) => {
+                            if !status.success() {
+                                tracing::error!("[ffmpeg] exited with status: {}", status);
+                            } else {
+                                tracing::info!("[ffmpeg] exited successfully");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("[ffmpeg] failed to wait for process: {}", e);
+                        }
+                    }
                 });
 
                 stdin
@@ -218,9 +229,14 @@ impl PipeMerger {
             let (video_sender, mut video_receiver) = mpsc::unbounded_channel::<SendSegment>();
             let video_handle = tokio::spawn(async move {
                 while let Some((mut reader, _, invalidate)) = video_receiver.recv().await {
-                    tokio::io::copy(&mut reader, &mut video_pipe).await.unwrap();
+                    if let Err(e) = tokio::io::copy(&mut reader, &mut video_pipe).await {
+                        tracing::error!("[ffmpeg] Broken video pipe: {}", e);
+                        break;
+                    }
                     if recycle {
-                        invalidate.await.unwrap();
+                        if let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                        }
                     }
                 }
             });
@@ -231,9 +247,14 @@ impl PipeMerger {
                 audio_pipe.connect().await.unwrap();
 
                 while let Some((mut reader, _, invalidate)) = audio_receiver.recv().await {
-                    tokio::io::copy(&mut reader, &mut audio_pipe).await.unwrap();
+                    if let Err(e) = tokio::io::copy(&mut reader, &mut audio_pipe).await {
+                        tracing::error!("[ffmpeg] Broken audio pipe: {}", e);
+                        break;
+                    }
                     if recycle {
-                        invalidate.await.unwrap();
+                        if let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                        }
                     }
                 }
             });
