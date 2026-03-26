@@ -263,10 +263,16 @@ impl PipeMerger {
                 if let Some((reader, r#type, invalidate)) = segment {
                     match r#type {
                         StreamType::Video => {
-                            video_sender.send((reader, r#type, invalidate)).unwrap();
+                            if video_sender.send((reader, r#type, invalidate)).is_err() {
+                                tracing::debug!("[ffmpeg] video receiver dropped, stopping mux");
+                                break;
+                            }
                         }
                         StreamType::Audio => {
-                            audio_sender.send((reader, r#type, invalidate)).unwrap();
+                            if audio_sender.send((reader, r#type, invalidate)).is_err() {
+                                tracing::debug!("[ffmpeg] audio receiver dropped, stopping mux");
+                                break;
+                            }
                         }
                         StreamType::Subtitle | StreamType::Unknown => {
                             if recycle {
@@ -294,9 +300,11 @@ impl PipeMerger {
         }
     }
 
-    fn send(&self, message: (u64, u64, Option<SendSegment>)) {
+    fn send(&self, message: (u64, u64, Option<SendSegment>)) -> Result<(), ()> {
         if let Some(sender) = &self.sender {
-            sender.send(message).expect("Failed to send segment");
+            sender.send(message).map_err(|_| ())
+        } else {
+            Err(())
         }
     }
 }
@@ -311,11 +319,17 @@ impl Merger for PipeMerger {
         let reader = cache.open_reader(&segment).await?;
         let invalidate = async move { cache.invalidate(&segment).await };
 
-        self.send((
+        if self.send((
             stream_id,
             sequence,
             Some((Box::pin(reader), stream_type, Box::pin(invalidate))),
-        ));
+        )).is_err() {
+            tracing::warn!("[ffmpeg] pipe closed, dropping segment");
+            return Err(crate::error::IoriError::IOError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Pipe to ffmpeg was closed",
+            )));
+        }
 
         Ok(())
     }
@@ -324,7 +338,7 @@ impl Merger for PipeMerger {
         let stream_id = segment.stream_id;
         cache.invalidate(&segment).await?;
 
-        self.send((stream_id, segment.sequence, None));
+        let _ = self.send((stream_id, segment.sequence, None));
 
         Ok(())
     }
