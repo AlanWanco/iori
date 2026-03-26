@@ -129,8 +129,8 @@ impl PipeMerger {
                 let mut command = Command::new("ffmpeg");
                 command
                     .stdin(Stdio::piped())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit());
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
 
                 #[cfg(not(target_os = "windows"))]
                 {
@@ -176,6 +176,36 @@ impl PipeMerger {
 
                 let mut process = command.spawn().unwrap();
                 let stdin = process.stdin.take().unwrap();
+                
+                // Capture and forward ffmpeg output to tracing
+                let mut stderr = process.stderr.take().unwrap();
+                tokio::spawn(async move {
+                    use tokio::io::AsyncReadExt;
+                    let mut buf = vec![0; 1024];
+                    let mut line = String::new();
+                    while let Ok(n) = stderr.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        let chunk = String::from_utf8_lossy(&buf[..n]);
+                        for c in chunk.chars() {
+                            if c == '\r' || c == '\n' {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() {
+                                    if trimmed.starts_with("frame=") || trimmed.starts_with("size=") {
+                                        tracing::info!("[ffmpeg] {}", trimmed);
+                                    } else {
+                                        tracing::debug!("[ffmpeg] {}", trimmed);
+                                    }
+                                }
+                                line.clear();
+                            } else {
+                                line.push(c);
+                            }
+                        }
+                    }
+                });
+
                 tokio::spawn(async move {
                     process.wait().await.unwrap();
                 });
