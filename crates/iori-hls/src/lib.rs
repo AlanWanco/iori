@@ -15,7 +15,7 @@ pub fn parse_playlist_res(input: &[u8]) -> Result<Playlist, M3u8ParseError> {
     match (&m3u8_rs_result, &quick_m3u8_result) {
         (Ok(m3u8_rs_playlist), Ok(quick_m3u8_playlist)) => {
             if m3u8_rs_playlist != quick_m3u8_playlist {
-                tracing::warn!(
+                tracing::debug!(
                     "New m3u8 parse engine produced different result, this should not happen.\nold: {:?}\nnew: {:?}\nRaw input: {}",
                     m3u8_rs_playlist,
                     quick_m3u8_playlist,
@@ -24,13 +24,13 @@ pub fn parse_playlist_res(input: &[u8]) -> Result<Playlist, M3u8ParseError> {
             }
         }
         (Ok(_), Err(quick_m3u8_error)) => {
-            tracing::warn!(
+            tracing::debug!(
                 "New m3u8 parse engine produced an error, but the old one passed.\nError: {quick_m3u8_error}\nRaw input: {}",
                 String::from_utf8_lossy(input)
             );
         }
         (Err(m3u8_rs_error), Ok(_)) => {
-            tracing::warn!(
+            tracing::debug!(
                 "Old m3u8 parse engine produced an error, but the new one passed.\nError: {m3u8_rs_error}\nRaw input: {}",
                 String::from_utf8_lossy(input)
             );
