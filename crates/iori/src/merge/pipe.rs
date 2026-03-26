@@ -129,7 +129,7 @@ impl PipeMerger {
                 let mut command = Command::new("ffmpeg");
                 command
                     .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
+                    .stdout(Stdio::inherit())
                     .stderr(Stdio::piped());
 
                 #[cfg(not(target_os = "windows"))]
