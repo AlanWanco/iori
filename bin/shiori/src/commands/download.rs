@@ -461,7 +461,11 @@ impl OutputOptions {
             if self.output_mode.pipe_mux {
                 IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None, streams_hint.unwrap_or(1) > 1)
             } else if let Some(file) = self.output {
-                IoriMerger::pipe_to_file(file, self.recycle)
+                if file.to_string_lossy() == "-" {
+                    IoriMerger::pipe(self.recycle)
+                } else {
+                    IoriMerger::pipe_to_file(file, self.recycle)
+                }
             } else {
                 IoriMerger::pipe(self.recycle)
             }
