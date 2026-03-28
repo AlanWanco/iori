@@ -138,7 +138,7 @@ where
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
-            .merger(self.output.into_merger()?)
+            .merger(self.output.into_merger(self.extra.streams_hint)?)
             .stop_signal(stop_signal);
 
         match playlist_type {
@@ -401,6 +401,7 @@ pub struct ExtraOptions {
     pub platform: Option<String>,
     /// Original URL from InspectSource, used for cookie refresh etc.
     pub original_url: Option<String>,
+    pub streams_hint: Option<u32>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -447,7 +448,7 @@ pub struct OutputModeOptions {
 }
 
 impl OutputOptions {
-    pub fn into_merger(self) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
+    pub fn into_merger(self, streams_hint: Option<u32>) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
         Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
         } else if self.output_mode.proxy_mode {
@@ -458,7 +459,7 @@ impl OutputOptions {
             IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None)
+                IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None, streams_hint.unwrap_or(1) > 1)
             } else if let Some(file) = self.output {
                 IoriMerger::pipe_to_file(file, self.recycle)
             } else {
@@ -552,6 +553,7 @@ where
                     .source
                     .as_ref()
                     .and_then(|s| s.original_url.clone()),
+                streams_hint: data.streams_hint,
             },
             output: OutputOptions {
                 output: data.title.map(|title| sanitize(&title).into()),

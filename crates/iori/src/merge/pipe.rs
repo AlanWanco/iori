@@ -101,26 +101,29 @@ impl PipeMerger {
         }
     }
 
-    pub fn mux(recycle: bool, output: PathBuf, extra_command: Option<String>) -> Self {
+    pub fn mux(recycle: bool, output: PathBuf, extra_command: Option<String>, has_audio: bool) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut stream: OrderedStream<Option<SendSegment>> = OrderedStream::new(rx);
 
         #[cfg(target_os = "windows")]
-        let (mut audio_pipe, audio_receiver) = {
+        let (audio_pipe, audio_receiver) = if has_audio {
             let pipe_name = format!(r"\\.\pipe\iori-pipe-mux-audio-{}", rand::random::<u64>());
             let server = tokio::net::windows::named_pipe::ServerOptions::new()
                 .first_pipe_instance(true)
                 .create(&pipe_name)
                 .unwrap();
-            (server, pipe_name)
+            (Some(server), Some(pipe_name))
+        } else {
+            (None, None)
         };
 
         #[cfg(not(target_os = "windows"))]
-        let (mut audio_pipe, audio_receiver) = {
-            let (audio_pipe, audio_receiver) = tokio::net::unix::pipe::pipe().unwrap();
-            let audio_receiver = audio_receiver.into_nonblocking_fd().unwrap();
-            (audio_pipe, audio_receiver)
+        let (audio_pipe, audio_receiver) = if has_audio {
+            let (pipe, receiver) = tokio::net::unix::pipe::pipe().unwrap();
+            (Some(pipe), Some(receiver.into_nonblocking_fd().unwrap()))
+        } else {
+            (None, None)
         };
 
         let future = tokio::spawn(async move {
@@ -134,13 +137,15 @@ impl PipeMerger {
 
                 #[cfg(not(target_os = "windows"))]
                 {
-                    use command_fds::{CommandFdExt, FdMapping};
-                    command
-                        .fd_mappings(vec![FdMapping {
-                            parent_fd: audio_receiver,
-                            child_fd: 3,
-                        }])
-                        .unwrap();
+                    if let Some(audio_rx) = audio_receiver {
+                        use command_fds::{CommandFdExt, FdMapping};
+                        command
+                            .fd_mappings(vec![FdMapping {
+                                parent_fd: audio_rx,
+                                child_fd: 3,
+                            }])
+                            .unwrap();
+                    }
                 }
 
                 command.args(["-y", "-fflags", "+genpts"]); // , "-loglevel", "quiet"
@@ -151,16 +156,21 @@ impl PipeMerger {
 
                 // video input: stdin
                 command.args(["-i", "pipe:0"]);
+                
                 // audio input: mapped fd 3 or named pipe
-                #[cfg(target_os = "windows")]
-                command.args(["-i", &audio_receiver]);
-                #[cfg(not(target_os = "windows"))]
-                command.args(["-i", "pipe:3"]);
+                if has_audio {
+                    #[cfg(target_os = "windows")]
+                    if let Some(audio_rx) = audio_receiver {
+                        command.args(["-i", &audio_rx]);
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    command.args(["-i", "pipe:3"]);
+                    
+                    command.args(["-map", "0", "-map", "1"]);
+                }
 
                 #[rustfmt::skip]
                 command.args([
-                    "-map", "0",
-                    "-map", "1",
                     "-strict", "unofficial",
                     "-c", "copy",
                     "-metadata", &format!(r#"date="{}""#, chrono::Utc::now().to_rfc3339()),
@@ -244,17 +254,28 @@ impl PipeMerger {
 
             let (audio_sender, mut audio_receiver) = mpsc::unbounded_channel::<SendSegment>();
             let audio_handle = tokio::spawn(async move {
-                #[cfg(target_os = "windows")]
-                audio_pipe.connect().await.unwrap();
+                if let Some(mut audio_pipe) = audio_pipe {
+                    #[cfg(target_os = "windows")]
+                    audio_pipe.connect().await.unwrap();
 
-                while let Some((mut reader, _, invalidate)) = audio_receiver.recv().await {
-                    if let Err(e) = tokio::io::copy(&mut reader, &mut audio_pipe).await {
-                        tracing::error!("[ffmpeg] Broken audio pipe: {}", e);
-                        break;
+                    while let Some((mut reader, _, invalidate)) = audio_receiver.recv().await {
+                        if let Err(e) = tokio::io::copy(&mut reader, &mut audio_pipe).await {
+                            tracing::error!("[ffmpeg] Broken audio pipe: {}", e);
+                            break;
+                        }
+                        if recycle {
+                            if let Err(e) = invalidate.await {
+                                tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                            }
+                        }
                     }
-                    if recycle {
-                        if let Err(e) = invalidate.await {
-                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                } else {
+                    // Just drain and discard if there's no audio pipe but we still got audio segments
+                    while let Some((_, _, invalidate)) = audio_receiver.recv().await {
+                        if recycle {
+                            if let Err(e) = invalidate.await {
+                                tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                            }
                         }
                     }
                 }
