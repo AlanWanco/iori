@@ -220,7 +220,7 @@ where
         if self.decrypt.key.is_none() {
             self.decrypt.key = from.decrypt.key;
         }
-        if self.output.output.is_none() {
+        if self.output.output.is_none() && !self.output.output_mode.pipe {
             self.output.output = from.output.output;
         }
         self.extra = from.extra;
