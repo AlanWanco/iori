@@ -459,7 +459,12 @@ impl OutputOptions {
             IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None, streams_hint.unwrap_or(1) > 1)
+                IoriMerger::pipe_mux_with_audio(
+                    self.output.unwrap_or("-".into()),
+                    self.recycle,
+                    None,
+                    streams_hint.unwrap_or(1) > 1,
+                )
             } else if let Some(file) = self.output {
                 if file.to_string_lossy() == "-" {
                     IoriMerger::pipe(self.recycle)
