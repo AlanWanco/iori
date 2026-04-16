@@ -55,6 +55,33 @@ shiori download \
 
 不提供用户名密码也可以尝试匿名访问（部分免费活动可能不需要登录）。
 
+### 转播功能目前可用的命令
+
+```bash
+# 方式 1: -P
+# 纯 pipe 模式，shiori 把流输出到 stdout，交给外部 ffmpeg 推流/转封装
+shiori download \
+  --eplus-username '...' --eplus-password '...' \
+  --initial-segments 3 \
+  -P \
+  'https://live.eplus.jp/ex/player?ib=XXXX' \
+  | ffmpeg -re -i pipe:0 -c copy -f flv 'rtmp://127.0.0.1/live/test'
+
+# 方式 2: -M
+# shiori 内部启动 ffmpeg；有音频流时会自动做音视频 mux 后输出到目标地址
+shiori download \
+  --eplus-username '...' --eplus-password '...' \
+  --initial-segments 3 \
+  -M \
+  -o 'rtmp://127.0.0.1/live/test' \
+  'https://live.eplus.jp/ex/player?ib=XXXX'
+```
+
+目前建议：
+
+- `-P` 适合你想自己完全控制 ffmpeg 参数的时候
+- `-M` 适合直接转推，尤其是有独立音轨的流
+
 ## 三、具体逻辑
 
 整个流程分两个阶段：
