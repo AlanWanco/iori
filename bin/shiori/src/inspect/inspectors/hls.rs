@@ -48,14 +48,34 @@ impl Inspect for HlsInspector {
     /// HLS playlist and immediately returns it.
     async fn inspect(
         &self,
-        _context: &ShioriContext,
+        context: &ShioriContext,
         url: &str,
         _captures: &regex::Captures,
         _args: &dyn InspectorArguments,
     ) -> anyhow::Result<InspectResult> {
+        let mut initial_playlist_data = None;
+        let mut streams_hint = None;
+
+        if let Ok(response) = context.http.client().get(url).send().await
+            && let Ok(text) = response.text().await
+        {
+            let has_variant_stream = text.contains("#EXT-X-STREAM-INF:");
+            let has_alternative_audio = text.contains("#EXT-X-MEDIA:")
+                && text.contains("TYPE=AUDIO")
+                && text.contains("URI=");
+
+            if has_variant_stream && has_alternative_audio {
+                streams_hint = Some(2);
+            }
+
+            initial_playlist_data = Some(text);
+        }
+
         Ok(InspectResult::Playlist(InspectPlaylist {
             playlist_url: url.to_string(),
             playlist_type: PlaylistType::HLS,
+            initial_playlist_data,
+            streams_hint,
             ..Default::default()
         }))
     }

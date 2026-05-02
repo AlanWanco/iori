@@ -2,18 +2,23 @@ use serde::{Deserialize, Serialize};
 
 /// Data extracted from the `var app = {...};` JavaScript variable on the eplus event page.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct EplusAppData {
+    #[serde(alias = "appId")]
     pub app_id: String,
+    #[serde(alias = "appName")]
     pub app_name: Option<String>,
 
     #[serde(default)]
+    #[serde(alias = "deliveryStatus")]
     pub delivery_status: Option<String>,
     #[serde(default)]
+    #[serde(alias = "archiveMode")]
     pub archive_mode: Option<String>,
     #[serde(default)]
+    #[serde(alias = "drmMode")]
     pub drm_mode: Option<String>,
     #[serde(default)]
+    #[serde(alias = "isPassTicket")]
     pub is_pass_ticket: Option<String>,
 }
 

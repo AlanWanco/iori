@@ -1,8 +1,8 @@
-use crate::{models::*, M3u8ParseError};
+use crate::{M3u8ParseError, models::*};
 use quick_m3u8::{
-    config::ParsingOptionsBuilder,
-    tag::{hls, KnownTag},
     HlsLine, Reader,
+    config::ParsingOptionsBuilder,
+    tag::{KnownTag, hls},
 };
 
 pub fn parse_playlist_res(input: &[u8]) -> Result<Playlist, M3u8ParseError> {

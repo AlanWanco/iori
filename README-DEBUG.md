@@ -40,7 +40,7 @@ shiori download \
 shiori download \
   --eplus-username 'your@email.com' \
   --eplus-password 'yourpass' \
-  --eplus-prefer-archive \
+  --eplus-archive \
   -o output.ts \
   'https://live.eplus.jp/ex/player?ib=XXXX'
 

@@ -171,15 +171,13 @@ where
                             "[eplus] No event URL found for cookie refresh, \
                              falling back to standard HLS source."
                         );
-                        let source =
-                            HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
-                                .with_initial_segment_limit(self.download.initial_segments);
+                        let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                            .with_initial_segment_limit(self.download.initial_segments);
                         downloader.download(source).await?;
                     }
                 } else {
-                    let source =
-                        HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
-                            .with_initial_segment_limit(self.download.initial_segments);
+                    let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                        .with_initial_segment_limit(self.download.initial_segments);
                     downloader.download(source).await?;
                 }
             }
@@ -448,7 +446,10 @@ pub struct OutputModeOptions {
 }
 
 impl OutputOptions {
-    pub fn into_merger(self, streams_hint: Option<u32>) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
+    pub fn into_merger(
+        self,
+        streams_hint: Option<u32>,
+    ) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
         Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
         } else if self.output_mode.proxy_mode {
@@ -558,10 +559,7 @@ where
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
                 platform: data.source.as_ref().map(|s| s.platform.clone()),
-                original_url: data
-                    .source
-                    .as_ref()
-                    .and_then(|s| s.original_url.clone()),
+                original_url: data.source.as_ref().and_then(|s| s.original_url.clone()),
                 streams_hint: data.streams_hint,
             },
             output: OutputOptions {

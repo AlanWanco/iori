@@ -507,7 +507,10 @@ where
                 SetForegroundColor(CColor::Blue),
                 Print("│ "),
                 SetForegroundColor(CColor::Cyan),
-                Print(format!("🌐 Proxy Server: http://{}/playlist.m3u8", local_ip)),
+                Print(format!(
+                    "🌐 Proxy Server: http://{}/playlist.m3u8",
+                    local_ip
+                )),
                 ResetColor,
                 Print("\n")
             )?;

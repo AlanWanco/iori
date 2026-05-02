@@ -146,6 +146,7 @@ impl PluginManager {
                         InspectBranch::NotFound => {
                             if let Some(wait_time) = self.wait {
                                 sleep(Duration::from_secs(wait_time)).await;
+                                continue 'outer;
                             } else {
                                 anyhow::bail!("Not found")
                             }

@@ -108,7 +108,10 @@ impl StreamingSource for HlsLiveSource {
                         // subsequent fetches produce sequences continuing from
                         // where the truncated batch left off.
                         if did_truncate {
-                            playlist.lock().await.reset_stream_sequences(&new_sequence_starts);
+                            playlist
+                                .lock()
+                                .await
+                                .reset_stream_sequences(&new_sequence_starts);
                         }
                     }
                 }
@@ -137,6 +140,7 @@ impl StreamingSource for HlsLiveSource {
                         .or(*latest_media_sequence);
                 }
 
+                let has_new_segments = segments.iter().any(|s| !s.is_empty());
                 let mixed_segments = segments.mix();
                 if !mixed_segments.is_empty()
                     && let Err(e) = sender.send(Ok(mixed_segments))
@@ -150,7 +154,12 @@ impl StreamingSource for HlsLiveSource {
                 }
 
                 // playlist does not end, wait for a while and fetch again
-                let seconds_to_wait = segments_average_duration.clamp(1000, 5000);
+                // Be more aggressive when new segments are flowing to reduce live latency.
+                let seconds_to_wait = if has_new_segments {
+                    300
+                } else {
+                    segments_average_duration.clamp(800, 4000)
+                };
                 tokio::time::sleep_until(before_load + Duration::from_millis(seconds_to_wait))
                     .await;
             }

@@ -28,7 +28,7 @@ impl ShioriPlugin for EplusPlugin {
             "[Eplus] Your eplus.jp login password.",
         );
         command.add_boolean_argument(
-            "eplus-prefer-archive",
+            "eplus-archive",
             "[Eplus] Prefer archive/VOD stream over live stream.",
         );
     }
@@ -37,6 +37,12 @@ impl ShioriPlugin for EplusPlugin {
         // Match eplus player pages: https://live.eplus.jp/ex/player?ib=...
         registry.register_inspector(
             Regex::new(r"https://live\.eplus\.jp/ex/player\?ib=(?P<ib>.+)").unwrap(),
+            Box::new(EplusInspector),
+            PriorityHint::Normal,
+        );
+        // Match vp pages: https://live.eplus.jp/vp/<id>
+        registry.register_inspector(
+            Regex::new(r"https://live\.eplus\.jp/vp/(?P<id>[^/?#]+)$").unwrap(),
             Box::new(EplusInspector),
             PriorityHint::Normal,
         );
@@ -68,7 +74,7 @@ impl Inspect for EplusInspector {
     ) -> anyhow::Result<InspectResult> {
         let username = args.get_string("eplus-username");
         let password = args.get_string("eplus-password");
-        let prefer_archive = args.get_boolean("eplus-prefer-archive");
+        let prefer_archive = args.get_boolean("eplus-archive");
 
         // Create client using the shared IoriHttp cookie store.
         // After login, session cookies are stored in context.http's cookie jar.
@@ -91,12 +97,22 @@ impl Inspect for EplusInspector {
         }
 
         // Select the best playlist URL
-        let Some(playlist_url) =
-            EplusClient::select_best_playlist(&event_data.m3u8_urls, prefer_archive)
+        let Some(playlist_url) = client
+            .select_best_playlist(&event_data.m3u8_urls, prefer_archive)
+            .await
         else {
+            log::info!("Title: {}", event_data.title);
+            log::info!("Status: {:?}", event_data.delivery_status);
+            log::info!("Playlist Candidates: {}", event_data.m3u8_urls.len());
             log::warn!("Could not determine a valid playlist URL.");
             return Ok(InspectResult::None);
         };
+
+        if event_data.delivery_status == iori_eplus::model::DeliveryStatus::Preparing {
+            log::info!(
+                "Event is marked PREPARING, but a cookie-authenticated playlist is already available."
+            );
+        }
 
         // Export all cookies relevant for:
         // 1. The event page (session cookies for refresh)
@@ -109,11 +125,7 @@ impl Inspect for EplusInspector {
             }
         }
 
-        let content_type = if event_data
-            .delivery_status
-            .is_streamable()
-            && playlist_url.contains("stream.live.eplus.jp")
-        {
+        let content_type = if playlist_url.contains("stream.live.eplus.jp") {
             ContentType::Live
         } else {
             ContentType::Archive

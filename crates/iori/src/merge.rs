@@ -79,7 +79,12 @@ impl<C, M> IoriMerger<C, M> {
         extra_commands: Option<String>,
         has_audio: bool,
     ) -> Self {
-        Self::Pipe(PipeMerger::mux(recycle, output_file, extra_commands, has_audio))
+        Self::Pipe(PipeMerger::mux(
+            recycle,
+            output_file,
+            extra_commands,
+            has_audio,
+        ))
     }
 
     pub fn skip() -> Self {

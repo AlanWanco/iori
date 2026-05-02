@@ -4,15 +4,19 @@ use crate::inspect::{
 };
 use clap::Parser;
 use clap_handler::handler;
+use fake_user_agent::get_chrome_rua;
 use iori::IoriHttp;
 use reqwest::Client;
-use shiori_plugin::{InspectorArguments, InspectorCommand, ShioriContext};
+use shiori_plugin::{
+    ContentType, InspectPlaylist, InspectSource, InspectorArguments, InspectorCommand,
+    PlaylistType, ShioriContext,
+};
+use shiori_plugin_eplus::EplusPlugin;
 use shiori_plugin_gigafile::GigafilePlugin;
 use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_radiko::RadikoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
-use shiori_plugin_eplus::EplusPlugin;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "inspect", short_flag = 'S')]
@@ -45,7 +49,7 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
 #[handler(InspectCommand)]
 async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
     let context = ShioriContext {
-        http: IoriHttp::new(Client::builder),
+        http: IoriHttp::new(|| Client::builder().user_agent(get_chrome_rua())),
     };
     let (matched_inspector, data) = get_default_external_inspector()
         .wait(this.wait)
@@ -54,9 +58,83 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
         })
         .await?;
 
-    eprintln!("{matched_inspector}: {data:?}");
+    eprintln!("Inspector: {matched_inspector}");
+    for (index, playlist) in data.iter().enumerate() {
+        if index > 0 {
+            eprintln!();
+        }
+        print_playlist_summary(index, playlist);
+    }
 
     Ok(())
+}
+
+fn print_playlist_summary(index: usize, playlist: &InspectPlaylist) {
+    eprintln!("Playlist {}", index + 1);
+    eprintln!("Title: {}", playlist.title.as_deref().unwrap_or("<unknown>"));
+    eprintln!("Playlist Type: {}", format_playlist_type(&playlist.playlist_type));
+    eprintln!("Playlist URL: {}", playlist.playlist_url);
+
+    if let Some(source) = &playlist.source {
+        print_source_summary(source);
+    }
+
+    if let Some(streams_hint) = playlist.streams_hint {
+        eprintln!("Streams Hint: {streams_hint}");
+    }
+
+    if !playlist.headers.is_empty() {
+        eprintln!("Headers: {} entries", playlist.headers.len());
+    }
+
+    if !playlist.cookies.is_empty() {
+        eprintln!("Cookies: {} entries", playlist.cookies.len());
+    }
+
+    if playlist.key.is_some() {
+        eprintln!("Key: present");
+    }
+
+    if playlist.initial_playlist_data.is_some() {
+        eprintln!("Initial Playlist Data: present");
+    }
+}
+
+fn print_source_summary(source: &InspectSource) {
+    eprintln!("Platform: {}", source.platform);
+    eprintln!("Content Type: {}", format_content_type(&source.content_type));
+
+    if let Some(content_id) = source.content_id.as_deref() {
+        eprintln!("Content ID: {content_id}");
+    }
+
+    if let Some(channel_id) = source.channel_id.as_deref() {
+        eprintln!("Channel ID: {channel_id}");
+    }
+
+    if let Some(original_url) = source.original_url.as_deref() {
+        eprintln!("Original URL: {original_url}");
+    }
+}
+
+fn format_playlist_type(playlist_type: &PlaylistType) -> &'static str {
+    match playlist_type {
+        PlaylistType::HLS => "HLS",
+        PlaylistType::DASH => "DASH",
+        PlaylistType::RawData => "RawData",
+        PlaylistType::Http => "HTTP",
+        PlaylistType::RawRemoteSegments(_) => "RawRemoteSegments",
+        PlaylistType::Unknown => "Unknown",
+    }
+}
+
+fn format_content_type(content_type: &ContentType) -> &'static str {
+    match content_type {
+        ContentType::Live => "Live",
+        ContentType::Archive => "Archive",
+        ContentType::Video => "Video",
+        ContentType::File => "File",
+    }
 }
 
 #[derive(Clone, Debug, Default)]

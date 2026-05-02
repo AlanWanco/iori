@@ -181,7 +181,7 @@ fn generate_media_playlist(
     let mut playlist = String::new();
     playlist.push_str("#EXTM3U\n");
     playlist.push_str("#EXT-X-VERSION:7\n");
-    
+
     // Calculate max duration for target duration
     let max_duration = segments
         .values()
@@ -195,7 +195,10 @@ fn generate_media_playlist(
     if let Some(first) = segments.values().next() {
         match &first.initial_segment {
             crate::InitialSegment::Clear(_) | crate::InitialSegment::Encrypted(_) => {
-                playlist.push_str(&format!("#EXT-X-MAP:URI=\"/stream/{}/init.mp4\"\n", stream_id));
+                playlist.push_str(&format!(
+                    "#EXT-X-MAP:URI=\"/stream/{}/init.mp4\"\n",
+                    stream_id
+                ));
             }
             crate::InitialSegment::None => {}
         }
@@ -300,9 +303,12 @@ async fn serve_init_segment(
 ) -> Result<impl IntoResponse, StatusCode> {
     let segments = state.segments.read().await;
     let stream_segments = segments.get(&stream_id).ok_or(StatusCode::NOT_FOUND)?;
-    
-    let first_segment = stream_segments.values().next().ok_or(StatusCode::NOT_FOUND)?;
-    
+
+    let first_segment = stream_segments
+        .values()
+        .next()
+        .ok_or(StatusCode::NOT_FOUND)?;
+
     let data = match &first_segment.initial_segment {
         crate::InitialSegment::Clear(data) | crate::InitialSegment::Encrypted(data) => data.clone(),
         crate::InitialSegment::None => return Err(StatusCode::NOT_FOUND),

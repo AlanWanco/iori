@@ -31,11 +31,12 @@ impl std::io::Write for SmartWriter {
                 if s.ends_with('\n') {
                     s.pop();
                 }
-                
+
                 static ANSI_RE: OnceLock<regex::Regex> = OnceLock::new();
-                let re = ANSI_RE.get_or_init(|| regex::Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap());
+                let re =
+                    ANSI_RE.get_or_init(|| regex::Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap());
                 let clean = re.replace_all(&s, "").into_owned();
-                
+
                 let _ = tx.send(clean);
             }
             Ok(buf.len())

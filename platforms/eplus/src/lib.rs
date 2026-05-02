@@ -2,9 +2,13 @@ pub mod model;
 pub mod source;
 
 use anyhow::{Context, bail};
+use iori::hls::iori_hls;
 use model::*;
 use regex::Regex;
-use reqwest::{Client, ClientBuilder, header::{HeaderMap, HeaderValue}};
+use reqwest::{
+    Client, ClientBuilder,
+    header::{HeaderMap, HeaderValue},
+};
 
 const CLOUDFRONT_COOKIE_NAMES: &[&str] = &[
     "CloudFront-Policy",
@@ -92,7 +96,10 @@ impl EplusClient {
             .await?;
         api_res.error_for_status_ref()?;
 
-        let ft_auth: FtAuthResponse = api_res.json().await.context("Failed to parse FTAuth response")?;
+        let ft_auth: FtAuthResponse = api_res
+            .json()
+            .await
+            .context("Failed to parse FTAuth response")?;
         if !ft_auth.is_success {
             let error_msg = ft_auth
                 .errors
@@ -185,6 +192,33 @@ impl EplusClient {
             log::warn!("This stream is DRM-protected. Download may not work.");
         }
 
+        // Parse `var listChannels = [...]`
+        let channels_re = Regex::new(r"var\s+listChannels\s*=\s*(?P<list>\[.+?\]);").unwrap();
+        let m3u8_urls: Vec<String> = channels_re
+            .captures(body)
+            .and_then(|caps| caps.name("list"))
+            .and_then(|m| {
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(m.as_str());
+                parsed.ok()
+            })
+            .map(|val| {
+                // listChannels can be an array of strings or an array of objects with "url" key
+                match val {
+                    serde_json::Value::Array(arr) => arr
+                        .into_iter()
+                        .filter_map(|item| match item {
+                            serde_json::Value::String(s) => Some(s),
+                            serde_json::Value::Object(obj) => obj
+                                .get("url")
+                                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => vec![],
+                }
+            })
+            .unwrap_or_default();
+
         match &delivery_status {
             DeliveryStatus::Preparing => log::warn!("Event has not started yet."),
             DeliveryStatus::Started => log::info!("Event is currently live."),
@@ -205,37 +239,9 @@ impl EplusClient {
             DeliveryStatus::Unknown(s) => log::warn!("Unknown delivery status: {s}"),
         }
 
-        // Parse `var listChannels = [...]`
-        let channels_re =
-            Regex::new(r"var\s+listChannels\s*=\s*(?P<list>\[.+?\]);").unwrap();
-        let m3u8_urls: Vec<String> = channels_re
-            .captures(body)
-            .and_then(|caps| caps.name("list"))
-            .and_then(|m| {
-                let parsed: Result<serde_json::Value, _> = serde_json::from_str(m.as_str());
-                parsed.ok()
-            })
-            .map(|val| {
-                // listChannels can be an array of strings or an array of objects with "url" key
-                match val {
-                    serde_json::Value::Array(arr) => arr
-                        .into_iter()
-                        .filter_map(|item| match item {
-                            serde_json::Value::String(s) => Some(s),
-                            serde_json::Value::Object(obj) => {
-                                obj.get("url").and_then(|v| v.as_str().map(|s| s.to_string()))
-                            }
-                            _ => None,
-                        })
-                        .collect(),
-                    _ => vec![],
-                }
-            })
-            .unwrap_or_default();
-
         // Parse `var streamSession = '...'`
         let session_re =
-            Regex::new(r#"var\s+streamSession\s*=\s*(['"])(?P<session>(?:(?!\1).)+)\1;"#).unwrap();
+            Regex::new(r#"var\s+streamSession\s*=\s*['"](?P<session>[^'"]+)['"];"#).unwrap();
         let stream_session = session_re
             .captures(body)
             .and_then(|caps| caps.name("session"))
@@ -270,13 +276,8 @@ impl EplusClient {
         cookies
     }
 
-    /// Given a list of m3u8 URLs from event data, categorize them and find the best one.
-    ///
-    /// Returns the master playlist URL (live preferred over VOD unless `prefer_archive` is true).
-    pub fn select_best_playlist(
-        m3u8_urls: &[String],
-        prefer_archive: bool,
-    ) -> Option<String> {
+    /// Given a list of m3u8 URLs from event data, categorize them and rank candidates.
+    pub fn candidate_playlists(m3u8_urls: &[String], prefer_archive: bool) -> Vec<String> {
         let common_id_re = Regex::new(r"/out/v1/([0-9a-fA-F]{32})/").unwrap();
 
         let mut live_urls: Vec<String> = Vec::new();
@@ -308,10 +309,56 @@ impl EplusClient {
 
         // Select based on preference
         if prefer_archive {
-            vod_urls.into_iter().next().or_else(|| live_urls.into_iter().next())
+            vod_urls.into_iter().chain(live_urls).collect()
         } else {
-            live_urls.into_iter().next().or_else(|| vod_urls.into_iter().next())
+            live_urls.into_iter().chain(vod_urls).collect()
         }
+    }
+
+    pub async fn select_best_playlist(
+        &self,
+        m3u8_urls: &[String],
+        prefer_archive: bool,
+    ) -> Option<String> {
+        for playlist_url in Self::candidate_playlists(m3u8_urls, prefer_archive) {
+            match self.client.get(&playlist_url).send().await {
+                Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                    Ok(body) => {
+                        if iori_hls::parse_playlist_res(&body).is_ok() {
+                            return Some(playlist_url);
+                        }
+
+                        log::info!(
+                            "Playlist candidate is reachable but not a valid m3u8 yet: {}",
+                            playlist_url
+                        );
+                    }
+                    Err(error) => {
+                        log::info!(
+                            "Playlist candidate body could not be read yet: {} -> {}",
+                            playlist_url,
+                            error
+                        );
+                    }
+                },
+                Ok(resp) => {
+                    log::info!(
+                        "Playlist candidate not accessible yet: {} -> {}",
+                        playlist_url,
+                        resp.status()
+                    );
+                }
+                Err(error) => {
+                    log::info!(
+                        "Playlist candidate not accessible yet: {} -> {}",
+                        playlist_url,
+                        error
+                    );
+                }
+            }
+        }
+
+        None
     }
 
     /// Get the underlying HTTP client for manual requests if needed.
