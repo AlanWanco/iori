@@ -140,6 +140,7 @@ where
             .cache(self.cache.into_cache()?)
             .merger(self.output.into_merger(self.extra.streams_hint)?)
             .stop_signal(stop_signal);
+        let live_idle_timeout = self.download.live_idle_timeout.map(Duration::from_secs);
 
         match playlist_type {
             PlaylistType::HLS | PlaylistType::Unknown => {
@@ -164,7 +165,8 @@ where
                             event_url,
                             self.decrypt.key.as_deref(),
                         )?
-                        .with_initial_segment_limit(self.download.initial_segments);
+                        .with_initial_segment_limit(self.download.initial_segments)
+                        .with_idle_timeout(live_idle_timeout);
                         downloader.download(source).await?;
                     } else {
                         log::warn!(
@@ -172,12 +174,14 @@ where
                              falling back to standard HLS source."
                         );
                         let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
-                            .with_initial_segment_limit(self.download.initial_segments);
+                            .with_initial_segment_limit(self.download.initial_segments)
+                            .with_idle_timeout(live_idle_timeout);
                         downloader.download(source).await?;
                     }
                 } else {
                     let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
-                        .with_initial_segment_limit(self.download.initial_segments);
+                        .with_initial_segment_limit(self.download.initial_segments)
+                        .with_idle_timeout(live_idle_timeout);
                     downloader.download(source).await?;
                 }
             }
@@ -312,6 +316,10 @@ pub struct DownloadOptions {
     #[clap(about_ll = "download-initial-segments")]
     #[clap(long)]
     pub initial_segments: Option<usize>,
+
+    #[clap(about_ll = "download-live-idle-timeout")]
+    #[clap(long)]
+    pub live_idle_timeout: Option<u64>,
 }
 
 impl Default for DownloadOptions {
@@ -321,6 +329,7 @@ impl Default for DownloadOptions {
             segment_retries: 5,
             manifest_retries: 3,
             initial_segments: None,
+            live_idle_timeout: None,
         }
     }
 }

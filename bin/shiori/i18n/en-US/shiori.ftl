@@ -24,6 +24,11 @@ download-initial-segments =
     Reduces startup latency for live streams with a long VOD buffer
     (e.g. when piping to ffmpeg for restreaming).
     If the playlist has fewer segments than N, all segments are kept.
+download-live-idle-timeout =
+    Stop a live HLS fetch after N seconds without new segments.
+
+    This is disabled by default. Use it for pseudo-live archives that never
+    publish EXT-X-ENDLIST.
 
 download-cache-in-menory-cache = Use in-memory cache and do not write cache to disk while downloading
 download-cache-temp-dir =

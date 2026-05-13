@@ -64,13 +64,25 @@ where
     C: CacheSource + Send + Sync + 'static,
     A: DownloaderApp + Send + Sync + 'static,
 {
-    pub async fn download(self) -> IoriResult<M::Result> {
+    pub async fn download(mut self) -> IoriResult<M::Result> {
         self.app.on_start().await?;
 
         let stream = self.source.segments_stream(&self.context).await?;
         tokio::pin!(stream);
 
-        while let Some(segments) = stream.next().await {
+        loop {
+            let segments = tokio::select! {
+                segments = stream.next() => segments,
+                _ = &mut self.stop_signal => {
+                    tracing::info!("Stop signal received, finishing downloaded segments.");
+                    break;
+                }
+            };
+
+            let Some(segments) = segments else {
+                break;
+            };
+
             // If the playlist is not available, the downloader will be stopped.
             if let Err(e) = segments {
                 tracing::error!("Failed to fetch segment list: {e}");
@@ -154,10 +166,6 @@ where
                     // drop permit to release the semaphore
                     drop(permit);
                 });
-            }
-
-            if self.stop_signal.is_terminated() {
-                break;
             }
         }
 

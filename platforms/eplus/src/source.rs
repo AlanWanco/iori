@@ -53,6 +53,12 @@ impl EplusSource {
         self.inner = self.inner.with_initial_segment_limit(limit);
         self
     }
+
+    /// Stop polling when no new segments arrive within `timeout`.
+    pub fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.inner = self.inner.with_idle_timeout(timeout);
+        self
+    }
 }
 
 impl StreamingSource for EplusSource {

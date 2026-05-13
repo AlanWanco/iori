@@ -24,6 +24,10 @@ download-initial-segments =
     用于减少拥有较长 VOD 缓冲的直播流的启动延迟
     （例如在通过管道将流传递给 ffmpeg 进行转播时）。
     如果播放列表中分片数少于 N，则保留全部分片。
+download-live-idle-timeout =
+    当直播 HLS 连续 N 秒没有新分片时停止拉取。
+
+    默认禁用。适用于不会发布 EXT-X-ENDLIST 的伪直播回放。
 
 download-cache-in-menory-cache = 使用内存缓存，下载时不将缓存写入磁盘
 download-cache-temp-dir =

@@ -16,6 +16,8 @@ pub struct HlsLiveSource {
     /// If set, only keep the last N segments from the first playlist fetch.
     /// Useful for reducing initial latency when piping to ffmpeg for restreaming.
     initial_segment_limit: Option<usize>,
+    /// If set, stop polling a live playlist after this long without new segments.
+    idle_timeout: Option<Duration>,
 }
 
 impl HlsLiveSource {
@@ -26,6 +28,7 @@ impl HlsLiveSource {
                 key,
             ))),
             initial_segment_limit: None,
+            idle_timeout: None,
         })
     }
 
@@ -34,6 +37,12 @@ impl HlsLiveSource {
     /// subsequent fetches continue from there as normal.
     pub fn with_initial_segment_limit(mut self, limit: Option<usize>) -> Self {
         self.initial_segment_limit = limit;
+        self
+    }
+
+    /// Stop polling when no new segments arrive within `timeout`.
+    pub fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.idle_timeout = timeout;
         self
     }
 }
@@ -52,8 +61,10 @@ impl StreamingSource for HlsLiveSource {
         let playlist = self.playlist.clone();
         let context = context.clone();
         let initial_segment_limit = self.initial_segment_limit;
+        let idle_timeout = self.idle_timeout;
         tokio::spawn(async move {
             let mut is_first_fetch = true;
+            let mut last_new_segment_at = tokio::time::Instant::now();
             loop {
                 if sender.is_closed() {
                     break;
@@ -141,6 +152,9 @@ impl StreamingSource for HlsLiveSource {
                 }
 
                 let has_new_segments = segments.iter().any(|s| !s.is_empty());
+                if has_new_segments {
+                    last_new_segment_at = tokio::time::Instant::now();
+                }
                 let mixed_segments = segments.mix();
                 if !mixed_segments.is_empty()
                     && let Err(e) = sender.send(Ok(mixed_segments))
@@ -150,6 +164,17 @@ impl StreamingSource for HlsLiveSource {
                 }
 
                 if is_end {
+                    break;
+                }
+
+                if let Some(timeout) = idle_timeout
+                    && !has_new_segments
+                    && last_new_segment_at.elapsed() >= timeout
+                {
+                    tracing::warn!(
+                        "No new HLS segments received for {} seconds; stopping live playlist polling.",
+                        timeout.as_secs()
+                    );
                     break;
                 }
 
