@@ -3,11 +3,17 @@ use std::time::Duration;
 use iori::{
     IoriHttp, IoriResult, Stream, StreamingSource,
     context::IoriContext,
-    hls::{HlsLiveSource, segment::M3u8Segment},
+    hls::{HlsLiveSource, iori_hls, segment::M3u8Segment},
 };
+use reqwest::Response;
 
 /// Refresh interval for CloudFront cookies (45 minutes).
-const COOKIE_REFRESH_INTERVAL: Duration = Duration::from_secs(45 * 60);
+const COOKIE_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const CLOUDFRONT_COOKIE_NAMES: &[&str] = &[
+    "CloudFront-Policy",
+    "CloudFront-Signature",
+    "CloudFront-Key-Pair-Id",
+];
 
 /// An HLS streaming source for eplus.jp that periodically refreshes CloudFront cookies.
 ///
@@ -22,6 +28,7 @@ pub struct EplusSource {
     /// A clone of the download-phase IoriHttp. Shares the same `Arc<CookieStoreMutex>`
     /// as the `Client` inside the `IoriContext` passed to `segments_stream`.
     http: IoriHttp,
+    playlist_url: String,
     event_url: String,
 }
 
@@ -40,10 +47,11 @@ impl EplusSource {
         event_url: String,
         key: Option<&str>,
     ) -> anyhow::Result<Self> {
-        let inner = HlsLiveSource::new(playlist_url, key)?;
+        let inner = HlsLiveSource::new(playlist_url.clone(), key)?;
         Ok(Self {
             inner,
             http,
+            playlist_url,
             event_url,
         })
     }
@@ -58,6 +66,13 @@ impl EplusSource {
     pub fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.inner = self.inner.with_idle_timeout(timeout);
         self
+    }
+
+    fn extract_cloudfront_cookies(res: &Response) -> Vec<String> {
+        res.cookies()
+            .filter(|cookie| CLOUDFRONT_COOKIE_NAMES.contains(&cookie.name()))
+            .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
+            .collect()
     }
 }
 
@@ -76,6 +91,7 @@ impl StreamingSource for EplusSource {
         // The inner HlsLiveSource's segment fetches (using `context.client`) will then
         // send the updated cookies.
         let refresh_http = self.http.clone();
+        let playlist_url = self.playlist_url.clone();
         let event_url = self.event_url.clone();
         tokio::spawn(async move {
             loop {
@@ -88,8 +104,46 @@ impl StreamingSource for EplusSource {
                 let client = refresh_http.client();
                 match client.get(&event_url).send().await {
                     Ok(res) => {
+                        let cookies_before = refresh_http.export_cookies_for_url(&playlist_url);
+                        let refreshed_cloudfront = Self::extract_cloudfront_cookies(&res);
+                        if !refreshed_cloudfront.is_empty() {
+                            refresh_http.add_cookies(refreshed_cloudfront.clone(), &playlist_url);
+                            refresh_http.add_cookies(refreshed_cloudfront, &event_url);
+                        }
+
                         if res.status().is_success() {
-                            log::info!("[eplus] CloudFront cookies refreshed successfully.");
+                            let cookies_after = refresh_http.export_cookies_for_url(&playlist_url);
+                            log::info!(
+                                "[eplus] CloudFront refresh finished. playlist cookies: {} -> {}",
+                                cookies_before.len(),
+                                cookies_after.len()
+                            );
+
+                            match client.get(&playlist_url).send().await {
+                                Ok(playlist_res) => match playlist_res.bytes().await {
+                                    Ok(body) => {
+                                        if iori_hls::parse_playlist_res(&body).is_ok() {
+                                            log::info!(
+                                                "[eplus] Refreshed playlist probe succeeded."
+                                            );
+                                        } else {
+                                            log::warn!(
+                                                "[eplus] Refreshed playlist probe returned non-m3u8 content."
+                                            );
+                                        }
+                                    }
+                                    Err(error) => {
+                                        log::warn!(
+                                            "[eplus] Failed to read refreshed playlist probe body: {error}"
+                                        );
+                                    }
+                                },
+                                Err(error) => {
+                                    log::warn!(
+                                        "[eplus] Refreshed playlist probe request failed: {error}"
+                                    );
+                                }
+                            }
                         } else {
                             log::warn!(
                                 "[eplus] Cookie refresh request returned status {}",
