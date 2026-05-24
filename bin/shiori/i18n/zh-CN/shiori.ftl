@@ -27,7 +27,8 @@ download-initial-segments =
 download-live-idle-timeout =
     当直播 HLS 连续 N 秒没有新分片时停止拉取。
 
-    默认禁用。适用于不会发布 EXT-X-ENDLIST 的伪直播回放。
+    默认值为 30 秒。适用于不会发布 EXT-X-ENDLIST 的伪直播回放，
+    正常直播也可按需覆盖。
 
 download-cache-in-menory-cache = 使用内存缓存，下载时不将缓存写入磁盘
 download-cache-temp-dir =

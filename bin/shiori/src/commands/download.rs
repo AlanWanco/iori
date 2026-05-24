@@ -318,7 +318,7 @@ pub struct DownloadOptions {
     pub initial_segments: Option<usize>,
 
     #[clap(about_ll = "download-live-idle-timeout")]
-    #[clap(long)]
+    #[clap(long, default_value = "30")]
     pub live_idle_timeout: Option<u64>,
 }
 
@@ -329,7 +329,7 @@ impl Default for DownloadOptions {
             segment_retries: 5,
             manifest_retries: 3,
             initial_segments: None,
-            live_idle_timeout: None,
+            live_idle_timeout: Some(30),
         }
     }
 }
