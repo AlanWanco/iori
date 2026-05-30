@@ -112,9 +112,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        run: |
+          case "${{ inputs.binary_name }}" in
+            shiori) manifest="bin/shiori/Cargo.toml" ;;
+            ssadecrypt) manifest="bin/ssadecrypt/Cargo.toml" ;;
+            minyami) manifest="bin/minyami/Cargo.toml" ;;
+            *)
+              echo "Unsupported binary: ${{ inputs.binary_name }}" >&2
+              exit 1
+              ;;
+          esac
+
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$manifest" | head -n1)
+          if [ -z "$version" ]; then
+            echo "Failed to determine version from $manifest" >&2
+            exit 1
+          fi
+
+          tag="${{ inputs.binary_name }}-v${version}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: $tag"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag already exists on origin: $tag"
+            exit 0
+          fi
+
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+
       - uses: taiki-e/create-gh-release-action@v1
         with:
           prefix: ${{ inputs.binary_name }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          title: ${{ steps.tag.outputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
