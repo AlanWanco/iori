@@ -3849,7 +3849,7 @@ dependencies = [
 
 [[package]]
 name = "shiori"
-version = "0.3.0"
+version = "0.3.0-awcfork"
 dependencies = [
  "anyhow",
  "async-recursion",

@@ -11,6 +11,24 @@ use std::{num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
 
+#[cfg(unix)]
+async fn wait_for_stop_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+
+    tokio::select! {
+        _ = sigint.recv() => {}
+        _ = sigterm.recv() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_stop_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+}
+
 /// Spawn a task that listens for Ctrl-C signals and stops the downloader
 ///
 /// The first Ctrl-C will trigger a graceful shutdown by calling `stop_signal.stop()`.
@@ -20,16 +38,14 @@ pub fn spawn_ctrlc_handler() -> oneshot::Receiver<()> {
 
     tokio::spawn(async move {
         // wait for the first ctrl-c to stop downloader
-        if tokio::signal::ctrl_c().await.is_ok() {
-            tracing::info!("Ctrl-C received, stopping downloader.");
-            stop_signal.send(()).expect("Failed to send stop signal");
-        }
+        wait_for_stop_signal().await;
+        tracing::info!("Ctrl-C received, stopping downloader.");
+        let _ = stop_signal.send(());
 
         // wait for the second ctrl-c to force exit
-        if tokio::signal::ctrl_c().await.is_ok() {
-            tracing::info!("Ctrl-C received again, force exit.");
-            std::process::exit(1);
-        }
+        wait_for_stop_signal().await;
+        tracing::info!("Ctrl-C received again, force exit.");
+        std::process::exit(1);
     });
 
     receiver
@@ -75,6 +91,7 @@ where
                 segments = stream.next() => segments,
                 _ = &mut self.stop_signal => {
                     tracing::info!("Stop signal received, finishing downloaded segments.");
+                    drop(stream);
                     break;
                 }
             };
