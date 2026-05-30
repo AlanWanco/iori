@@ -136,7 +136,8 @@ jobs:
             exit 1
           fi
 
-          tag="${{ inputs.binary_name }}-v${version}"
+          short_sha=$(git rev-parse --short "$GITHUB_SHA")
+          tag="${{ inputs.binary_name }}-v${version}-${short_sha}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Using release tag: $tag"
 
