@@ -110,6 +110,8 @@ jobs:
   create-release:
     if: inputs.create_release == true
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -177,6 +179,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.create-release.outputs.release_tag }}
       - name: Setup | Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -216,4 +220,5 @@ jobs:
           features: ${{ inputs.features || '' }}
           tar: unix
           zip: windows
+          ref: refs/tags/${{ needs.create-release.outputs.release_tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
