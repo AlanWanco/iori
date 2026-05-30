@@ -86,7 +86,7 @@ where
 
 impl<Ext> DownloadCommand<Ext>
 where
-    Ext: Args + Clone + Default + Send + Sync + 'static,
+    Ext: Args + Clone + Default + Send + Sync + 'static + shiori_plugin::InspectorArguments,
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
@@ -153,6 +153,16 @@ where
                 let is_eplus = self.extra.platform.as_deref() == Some("eplus");
                 if is_eplus {
                     if let Some(event_url) = self.extra.original_url {
+                        let eplus_credentials = match (
+                            self.inspector_options.get_string("eplus-username"),
+                            self.inspector_options.get_string("eplus-password"),
+                        ) {
+                            (Some(username), Some(password)) => {
+                                Some(iori_eplus::source::EplusCredentials { username, password })
+                            }
+                            _ => None,
+                        };
+
                         // Use EplusSource which wraps HlsLiveSource with cookie refresh.
                         // The IoriHttp `http` has all cookies (session + CloudFront) from
                         // the inspect phase. EplusSource will use it to build its own
@@ -164,6 +174,7 @@ where
                             self.url,
                             event_url,
                             self.decrypt.key.as_deref(),
+                            eplus_credentials,
                         )?
                         .with_initial_segment_limit(self.download.initial_segments)
                         .with_idle_timeout(live_idle_timeout);

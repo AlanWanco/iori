@@ -59,6 +59,7 @@ pub struct EplusEventData {
     pub is_drm: bool,
     pub m3u8_urls: Vec<String>,
     pub stream_session: Option<String>,
+    pub session_update_url: Option<String>,
     pub cloudfront_cookies: Vec<(String, String)>,
 }
 

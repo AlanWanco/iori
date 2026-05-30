@@ -58,6 +58,10 @@ impl IoriHttp {
         (self.builder)().cookie_provider(cookies_store)
     }
 
+    pub fn raw_builder(&self) -> ClientBuilder {
+        (self.builder)()
+    }
+
     pub fn client(&self) -> Client {
         self.client
             .get_or_init(|| {
@@ -65,5 +69,9 @@ impl IoriHttp {
                 builder.build().unwrap()
             })
             .clone()
+    }
+
+    pub fn raw_client(&self) -> Client {
+        self.raw_builder().build().unwrap()
     }
 }

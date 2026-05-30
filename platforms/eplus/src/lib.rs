@@ -246,6 +246,12 @@ impl EplusClient {
             .captures(body)
             .and_then(|caps| caps.name("session"))
             .map(|m| m.as_str().to_string());
+        let session_update_url = stream_session.as_ref().map(|stream_session| {
+            format!(
+                "https://live.eplus.jp/api/stream/{}/status?sid={stream_session}",
+                app_data.app_id
+            )
+        });
 
         let title = app_data
             .app_name
@@ -258,8 +264,21 @@ impl EplusClient {
             is_drm,
             m3u8_urls,
             stream_session,
+            session_update_url,
             cloudfront_cookies,
         })
+    }
+
+    pub async fn refresh_status_cookies(
+        &self,
+        session_update_url: &str,
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        log::info!("Refreshing eplus stream status via {session_update_url}...");
+        let res = self.client.get(session_update_url).send().await?;
+        res.error_for_status_ref()?;
+        let cookies = self.extract_cloudfront_cookies(&res);
+        let _ = res.text().await;
+        Ok(cookies)
     }
 
     /// Extract CloudFront cookies from the response and the client cookie jar.

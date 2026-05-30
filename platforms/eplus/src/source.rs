@@ -5,15 +5,11 @@ use iori::{
     context::IoriContext,
     hls::{HlsLiveSource, iori_hls, segment::M3u8Segment},
 };
-use reqwest::Response;
+
+use crate::EplusClient;
 
 /// Refresh interval for CloudFront cookies (45 minutes).
 const COOKIE_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
-const CLOUDFRONT_COOKIE_NAMES: &[&str] = &[
-    "CloudFront-Policy",
-    "CloudFront-Signature",
-    "CloudFront-Key-Pair-Id",
-];
 
 /// An HLS streaming source for eplus.jp that periodically refreshes CloudFront cookies.
 ///
@@ -30,6 +26,13 @@ pub struct EplusSource {
     http: IoriHttp,
     playlist_url: String,
     event_url: String,
+    credentials: Option<EplusCredentials>,
+}
+
+#[derive(Clone)]
+pub struct EplusCredentials {
+    pub username: String,
+    pub password: String,
 }
 
 impl EplusSource {
@@ -46,6 +49,7 @@ impl EplusSource {
         playlist_url: String,
         event_url: String,
         key: Option<&str>,
+        credentials: Option<EplusCredentials>,
     ) -> anyhow::Result<Self> {
         let inner = HlsLiveSource::new(playlist_url.clone(), key)?;
         Ok(Self {
@@ -53,6 +57,7 @@ impl EplusSource {
             http,
             playlist_url,
             event_url,
+            credentials,
         })
     }
 
@@ -68,11 +73,17 @@ impl EplusSource {
         self
     }
 
-    fn extract_cloudfront_cookies(res: &Response) -> Vec<String> {
-        res.cookies()
-            .filter(|cookie| CLOUDFRONT_COOKIE_NAMES.contains(&cookie.name()))
-            .map(|cookie| format!("{}={}", cookie.name(), cookie.value()))
-            .collect()
+    fn sync_cloudfront_cookies(http: &IoriHttp, playlist_url: &str, event_url: &str, cookies: &[(String, String)]) {
+        if cookies.is_empty() {
+            return;
+        }
+
+        let cookies: Vec<String> = cookies
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect();
+        http.add_cookies(cookies.clone(), playlist_url);
+        http.add_cookies(cookies, event_url);
     }
 }
 
@@ -93,68 +104,184 @@ impl StreamingSource for EplusSource {
         let refresh_http = self.http.clone();
         let playlist_url = self.playlist_url.clone();
         let event_url = self.event_url.clone();
+        let credentials = self.credentials.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(COOKIE_REFRESH_INTERVAL).await;
                 log::info!("[eplus] Refreshing CloudFront cookies...");
 
-                // Use client() from the cloned IoriHttp. If the OnceLock was already
-                // initialized, it returns the same Client (which shares the cookie store).
-                // If not, it builds a new Client with the shared cookie_provider.
-                let client = refresh_http.client();
-                match client.get(&event_url).send().await {
-                    Ok(res) => {
+                let client = match EplusClient::new(refresh_http.builder()) {
+                    Ok(client) => client,
+                    Err(error) => {
+                        log::error!("[eplus] Failed to create refresh client: {error:#}");
+                        continue;
+                    }
+                };
+                let status_client = match EplusClient::new(refresh_http.raw_builder()) {
+                    Ok(client) => client,
+                    Err(error) => {
+                        log::error!("[eplus] Failed to create stateless status client: {error:#}");
+                        continue;
+                    }
+                };
+
+                let refresh_cycle = async {
+                    let event_data = client.get_event_data(&event_url).await?;
                         let cookies_before = refresh_http.export_cookies_for_url(&playlist_url);
-                        let refreshed_cloudfront = Self::extract_cloudfront_cookies(&res);
-                        if !refreshed_cloudfront.is_empty() {
-                            refresh_http.add_cookies(refreshed_cloudfront.clone(), &playlist_url);
-                            refresh_http.add_cookies(refreshed_cloudfront, &event_url);
-                        }
+                        Self::sync_cloudfront_cookies(
+                            &refresh_http,
+                            &playlist_url,
+                            &event_url,
+                            &event_data.cloudfront_cookies,
+                        );
 
-                        if res.status().is_success() {
-                            let cookies_after = refresh_http.export_cookies_for_url(&playlist_url);
+                        let mut status_cookie_count = 0usize;
+                        if let Some(session_update_url) = event_data.session_update_url.as_deref() {
                             log::info!(
-                                "[eplus] CloudFront refresh finished. playlist cookies: {} -> {}",
-                                cookies_before.len(),
-                                cookies_after.len()
+                                "[eplus] Refreshing CloudFront cookies via status API: {session_update_url}"
                             );
-
-                            match client.get(&playlist_url).send().await {
-                                Ok(playlist_res) => match playlist_res.bytes().await {
-                                    Ok(body) => {
-                                        if iori_hls::parse_playlist_res(&body).is_ok() {
-                                            log::info!(
-                                                "[eplus] Refreshed playlist probe succeeded."
-                                            );
-                                        } else {
-                                            log::warn!(
-                                                "[eplus] Refreshed playlist probe returned non-m3u8 content."
-                                            );
-                                        }
-                                    }
-                                    Err(error) => {
-                                        log::warn!(
-                                            "[eplus] Failed to read refreshed playlist probe body: {error}"
-                                        );
-                                    }
-                                },
+                            match status_client.refresh_status_cookies(session_update_url).await {
+                                Ok(status_cookies) => {
+                                    status_cookie_count = status_cookies.len();
+                                    log::info!(
+                                        "[eplus] Stateless status API returned {} CloudFront cookies.",
+                                        status_cookie_count
+                                    );
+                                    Self::sync_cloudfront_cookies(
+                                        &refresh_http,
+                                        &playlist_url,
+                                        &event_url,
+                                        &status_cookies,
+                                    );
+                                }
                                 Err(error) => {
                                     log::warn!(
-                                        "[eplus] Refreshed playlist probe request failed: {error}"
+                                        "[eplus] Stateless status API cookie refresh failed: {error:#}"
+                                    );
+                                    log::warn!(
+                                        "[eplus] Falling back to event-page cookies for this refresh cycle."
                                     );
                                 }
                             }
                         } else {
                             log::warn!(
-                                "[eplus] Cookie refresh request returned status {}",
-                                res.status()
+                                "[eplus] No streamSession/session_update_url found; falling back to event-page cookies only."
                             );
                         }
-                        // Consume the body to complete the request.
-                        let _ = res.text().await;
-                    }
-                    Err(e) => {
-                        log::error!("[eplus] Failed to refresh cookies: {e}");
+
+                        let cookies_after = refresh_http.export_cookies_for_url(&playlist_url);
+                        log::info!(
+                            "[eplus] CloudFront refresh finished. playlist cookies: {} -> {}, status api cookies: {}",
+                            cookies_before.len(),
+                            cookies_after.len(),
+                            status_cookie_count
+                        );
+
+                        let probe_client = refresh_http.client();
+                        match probe_client.get(&playlist_url).send().await {
+                            Ok(playlist_res) => match playlist_res.bytes().await {
+                                Ok(body) => {
+                                    if iori_hls::parse_playlist_res(&body).is_ok() {
+                                        log::info!("[eplus] Refreshed playlist probe succeeded.");
+                                    } else {
+                                        log::warn!(
+                                            "[eplus] Refreshed playlist probe returned non-m3u8 content."
+                                        );
+                                    }
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "[eplus] Failed to read refreshed playlist probe body: {error}"
+                                    );
+                                }
+                            },
+                            Err(error) => {
+                                log::warn!(
+                                    "[eplus] Refreshed playlist probe request failed: {error}"
+                                );
+                            }
+                        }
+                    anyhow::Ok(())
+                };
+
+                if let Err(error) = refresh_cycle.await {
+                    log::warn!("[eplus] Cookie refresh with current session failed: {error:#}");
+
+                    let Some(credentials) = &credentials else {
+                        log::error!(
+                            "[eplus] Failed to refresh cookies and no credentials are available for re-login."
+                        );
+                        continue;
+                    };
+
+                    log::info!("[eplus] Attempting eplus re-login before retrying refresh...");
+                    match EplusClient::login(
+                        refresh_http.builder(),
+                        &event_url,
+                        &credentials.username,
+                        &credentials.password,
+                    )
+                    .await
+                    {
+                        Ok(relogged_client) => {
+                            log::info!("[eplus] Re-login succeeded; retrying status refresh.");
+                            match relogged_client.get_event_data(&event_url).await {
+                                Ok(event_data) => {
+                                    Self::sync_cloudfront_cookies(
+                                        &refresh_http,
+                                        &playlist_url,
+                                        &event_url,
+                                        &event_data.cloudfront_cookies,
+                                    );
+
+                                    if let Some(session_update_url) = event_data.session_update_url.as_deref() {
+                                        let status_client = match EplusClient::new(refresh_http.raw_builder()) {
+                                            Ok(client) => client,
+                                            Err(error) => {
+                                                log::error!(
+                                                    "[eplus] Failed to create stateless status client after re-login: {error:#}"
+                                                );
+                                                continue;
+                                            }
+                                        };
+                                        log::info!(
+                                            "[eplus] Refreshing CloudFront cookies via status API after re-login: {session_update_url}"
+                                        );
+                                        match status_client.refresh_status_cookies(session_update_url).await {
+                                            Ok(status_cookies) => {
+                                                log::info!(
+                                                    "[eplus] Stateless status API after re-login returned {} CloudFront cookies.",
+                                                    status_cookies.len()
+                                                );
+                                                Self::sync_cloudfront_cookies(
+                                                    &refresh_http,
+                                                    &playlist_url,
+                                                    &event_url,
+                                                    &status_cookies,
+                                                );
+                                            }
+                                            Err(error) => {
+                                                log::warn!(
+                                                    "[eplus] Stateless status API after re-login failed: {error:#}"
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        log::warn!(
+                                            "[eplus] Re-login succeeded but streamSession/session_update_url is still missing."
+                                        );
+                                    }
+                                }
+                                Err(error) => {
+                                    log::error!(
+                                        "[eplus] Re-login succeeded but event data refresh still failed: {error:#}"
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            log::error!("[eplus] Re-login failed during cookie refresh: {error:#}");
+                        }
                     }
                 }
             }
