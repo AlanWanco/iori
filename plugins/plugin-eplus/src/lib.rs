@@ -31,6 +31,11 @@ impl ShioriPlugin for EplusPlugin {
             "eplus-archive",
             "[Eplus] Prefer archive/VOD stream over live stream.",
         );
+        command.add_argument(
+            "eplus-refresh-interval",
+            None,
+            "[Eplus] Refresh interval in seconds for cookie updates. Mainly for debugging.",
+        );
     }
 
     fn register(&self, registry: &mut dyn InspectorRegistry) -> anyhow::Result<()> {

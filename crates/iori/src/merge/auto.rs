@@ -22,14 +22,13 @@ pub use mkvmerge::MkvmergeMerger;
 /// - It will use mkvmerge to merge segments.
 ///
 /// If there are multiple tracks to merge, it will use mkvmerge to merge them.
-/// If there are any missing segments, the merge will be skipped.
+/// For concat-friendly formats like MPEG-TS, missing segments are skipped so
+/// resumed live streams can still produce a single output file.
 pub struct AutoMerger<C, M> {
     segments: HashMap<u64, Vec<ConcatSegment>>,
 
     /// Whether to recycle downloaded segments after merging.
     recycle: bool,
-
-    has_failed: bool,
 
     /// Final output file path. It may not have an extension.
     output_file: PathBuf,
@@ -45,7 +44,6 @@ impl<C, M> AutoMerger<C, M> {
         Self {
             segments: HashMap::new(),
             recycle,
-            has_failed: false,
 
             output_file: output_file.sanitize(),
             allowed_extensions: vec!["mkv", "mp4", "ts"],
@@ -89,15 +87,20 @@ where
                 segment,
                 success: false,
             });
-        self.has_failed = true;
         Ok(())
     }
 
     async fn finish(&mut self, cache: impl CacheSource) -> IoriResult<Self::Result> {
         tracing::info!("Merging chunks...");
 
-        if self.has_failed {
-            tracing::warn!("Some segments failed to download. Skipping merging.");
+        let has_failed = self
+            .segments
+            .values()
+            .any(|segments| segments.iter().any(|segment| !segment.success));
+        if has_failed && self.segments.len() > 1 {
+            tracing::warn!(
+                "Some segments failed to download on a multi-track stream. Skipping merging."
+            );
             if let Some(location) = cache.location_hint() {
                 tracing::warn!("You can find the downloaded segments at {location}");
             }
@@ -106,14 +109,20 @@ where
 
         let mut tracks = Vec::new();
         for (stream_id, segments) in self.segments.iter() {
-            let mut segments: Vec<_> = segments.iter().map(|s| &s.segment).collect();
+            let mut segments: Vec<_> = segments.iter().collect();
+            segments.sort_by(|a, b| a.segment.sequence.cmp(&b.segment.sequence));
 
-            let first_segment = segments[0];
+            let Some(first_successful_segment) = segments.iter().find(|segment| segment.success) else {
+                tracing::warn!(
+                    "All segments failed for stream {stream_id}. Skipping merge output for this stream."
+                );
+                continue;
+            };
+
+            let first_segment = &first_successful_segment.segment;
             let mut output_path = self.output_file.to_owned();
             output_path.add_suffix(format!("{stream_id:02}"));
             output_path.set_extension(first_segment.format.as_ext());
-
-            segments.sort_by(|a, b| a.sequence.cmp(&b.sequence));
 
             if output_path.exists() {
                 let timestamp = chrono::Utc::now().timestamp();
@@ -123,20 +132,47 @@ where
 
             let can_concat = segments.iter().all(|s| {
                 matches!(
-                    s.format,
+                    s.segment.format,
                     SegmentFormat::Mpeg2TS | SegmentFormat::Aac | SegmentFormat::Raw(_)
-                ) || matches!(s.stream_type, StreamType::Subtitle)
+                ) || matches!(s.segment.stream_type, StreamType::Subtitle)
             });
             if can_concat {
-                concat_merge(&segments, &cache, &output_path).await?;
+                if segments.iter().any(|segment| !segment.success) {
+                    tracing::warn!("Merging stream {stream_id} with missing segments skipped.");
+                }
+                let successful_segments: Vec<_> = segments
+                    .iter()
+                    .filter(|segment| segment.success)
+                    .map(|segment| &segment.segment)
+                    .collect();
+                concat_merge(&successful_segments, &cache, &output_path).await?;
             } else {
+                if segments.iter().any(|segment| !segment.success) {
+                    tracing::warn!(
+                        "Some segments failed to download for non-concat stream {stream_id}. Skipping merging."
+                    );
+                    if let Some(location) = cache.location_hint() {
+                        tracing::warn!("You can find the downloaded segments at {location}");
+                    }
+                    return Ok(());
+                }
                 output_path.set_extension(self.concat_merger.format().as_ext());
+                let successful_segments: Vec<_> =
+                    segments.iter().map(|segment| &segment.segment).collect();
                 self.concat_merger
-                    .concat(&segments, &cache, &output_path)
+                    .concat(&successful_segments, &cache, &output_path)
                     .await?;
             }
 
             tracks.push(output_path);
+        }
+
+        if tracks.is_empty() {
+            tracing::warn!("No mergeable tracks remain after skipping failed segments.");
+            if let Some(location) = cache.location_hint() {
+                tracing::warn!("You can find the downloaded segments at {location}");
+            }
+            return Ok(());
         }
 
         tracing::info!("Merging streams...");

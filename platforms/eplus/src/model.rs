@@ -60,7 +60,7 @@ pub struct EplusEventData {
     pub m3u8_urls: Vec<String>,
     pub stream_session: Option<String>,
     pub session_update_url: Option<String>,
-    pub cloudfront_cookies: Vec<(String, String)>,
+    pub cloudfront_cookies: Vec<String>,
 }
 
 /// Pre-login API response from eplus.

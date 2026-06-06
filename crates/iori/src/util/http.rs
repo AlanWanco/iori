@@ -41,6 +41,41 @@ impl IoriHttp {
         }
     }
 
+    pub fn clear_cookies_by_names(&self, names: &[&str]) -> usize {
+        let mut lock = self.cookies_store.lock().unwrap();
+        let to_remove: Vec<(String, String, String)> = lock
+            .iter_any()
+            .filter(|cookie| names.contains(&cookie.name()))
+            .filter_map(|cookie| {
+                Some((
+                    cookie.domain()?.to_string(),
+                    cookie.path()?.to_string(),
+                    cookie.name().to_string(),
+                ))
+            })
+            .collect();
+
+        for (domain, path, name) in &to_remove {
+            let _ = lock.remove(domain, path, name);
+        }
+
+        to_remove.len()
+    }
+
+    pub fn clear_all_cookies(&self) {
+        let mut lock = self.cookies_store.lock().unwrap();
+        *lock = CookieStore::default();
+    }
+
+    pub fn snapshot_cookies(&self) -> CookieStore {
+        self.cookies_store.lock().unwrap().clone()
+    }
+
+    pub fn restore_cookies(&self, snapshot: CookieStore) {
+        let mut lock = self.cookies_store.lock().unwrap();
+        *lock = snapshot;
+    }
+
     /// Export all cookies in the store as `name=value` strings for a given URL.
     ///
     /// This returns cookies that would be sent in a request to the given URL,

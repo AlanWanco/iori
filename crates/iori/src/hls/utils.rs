@@ -2,6 +2,14 @@ use crate::error::{IoriError, IoriResult};
 use iori_hls::{MediaPlaylist, Playlist};
 use reqwest::Client;
 use reqwest::Url;
+use std::time::Duration;
+
+const ACCESS_DENIED_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+fn is_access_denied_playlist_response(body: &[u8]) -> bool {
+    body.windows(b"AccessDenied".len())
+        .any(|window| window == b"AccessDenied")
+}
 
 pub async fn load_playlist_with_retry(
     client: &Client,
@@ -20,6 +28,13 @@ pub async fn load_playlist_with_retry(
                     Ok(parsed) => break parsed,
                     Err(error) => {
                         tracing::warn!("Failed to parse M3U8 file: {error}");
+                        if is_access_denied_playlist_response(&m3u8_bytes) {
+                            tracing::warn!(
+                                "Playlist returned AccessDenied; waiting {} ms before retrying.",
+                                ACCESS_DENIED_RETRY_DELAY.as_millis()
+                            );
+                            tokio::time::sleep(ACCESS_DENIED_RETRY_DELAY).await;
+                        }
                         retry -= 1;
                     }
                 },
@@ -58,6 +73,13 @@ pub async fn load_m3u8(
                     Ok(parsed) => break parsed,
                     Err(error) => {
                         tracing::warn!("Failed to parse M3U8 file: {error}");
+                        if is_access_denied_playlist_response(&m3u8_bytes) {
+                            tracing::warn!(
+                                "Playlist returned AccessDenied; waiting {} ms before retrying.",
+                                ACCESS_DENIED_RETRY_DELAY.as_millis()
+                            );
+                            tokio::time::sleep(ACCESS_DENIED_RETRY_DELAY).await;
+                        }
                         retry -= 1;
                     }
                 },

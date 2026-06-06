@@ -3,7 +3,7 @@ use crate::{
     SegmentInfo,
     cache::CacheSource,
     error::IoriResult,
-    util::path::{DuplicateOutputFileNamer, IoriPathExt},
+    util::path::IoriPathExt,
 };
 use std::path::PathBuf;
 use tokio::fs::File;
@@ -92,13 +92,16 @@ async fn concat_merge(
     segments.sort_by(|a, b| a.segment.sequence.cmp(&b.segment.sequence));
     let segments = trim_end(segments, |s| !s.success);
 
-    let mut namer = DuplicateOutputFileNamer::new(output_path.clone());
     let mut output = File::create(output_path).await?;
     for segment in segments {
         let success = segment.success;
         let segment = &segment.segment;
         if !success {
-            output = File::create(namer.next_path()).await?;
+            tracing::warn!(
+                "Skipping missing segment {} during concat merge.",
+                segment.file_name
+            );
+            continue;
         }
 
         let mut reader = cache.open_reader(segment).await?;

@@ -7,7 +7,7 @@ use model::*;
 use regex::Regex;
 use reqwest::{
     Client, ClientBuilder,
-    header::{HeaderMap, HeaderValue},
+    header::{HeaderMap, HeaderValue, SET_COOKIE},
 };
 
 const CLOUDFRONT_COOKIE_NAMES: &[&str] = &[
@@ -19,6 +19,11 @@ const CLOUDFRONT_COOKIE_NAMES: &[&str] = &[
 #[derive(Clone)]
 pub struct EplusClient {
     client: Client,
+}
+
+pub struct StatusRefreshResult {
+    pub set_cookies: Vec<String>,
+    pub cloudfront_cookie_count: usize,
 }
 
 impl EplusClient {
@@ -154,7 +159,7 @@ impl EplusClient {
         res.error_for_status_ref()?;
 
         // Collect CloudFront cookies from the response/session
-        let cloudfront_cookies = self.extract_cloudfront_cookies(&res);
+        let cloudfront_cookies = self.extract_cloudfront_set_cookies(&res);
 
         let body = res.text().await?;
         self.parse_event_page(&body, cloudfront_cookies)
@@ -164,7 +169,7 @@ impl EplusClient {
     fn parse_event_page(
         &self,
         body: &str,
-        cloudfront_cookies: Vec<(String, String)>,
+        cloudfront_cookies: Vec<String>,
     ) -> anyhow::Result<EplusEventData> {
         // Parse `var app = {...};`
         let app_re =
@@ -272,27 +277,49 @@ impl EplusClient {
     pub async fn refresh_status_cookies(
         &self,
         session_update_url: &str,
-    ) -> anyhow::Result<Vec<(String, String)>> {
+    ) -> anyhow::Result<StatusRefreshResult> {
         log::info!("Refreshing eplus stream status via {session_update_url}...");
         let res = self.client.get(session_update_url).send().await?;
         res.error_for_status_ref()?;
-        let cookies = self.extract_cloudfront_cookies(&res);
+        let cookies = self.extract_response_set_cookies(&res);
+        let cloudfront_cookie_count = cookies
+            .iter()
+            .filter(|cookie| {
+                cookie
+                    .split_once('=')
+                    .map(|(name, _)| CLOUDFRONT_COOKIE_NAMES.contains(&name.trim()))
+                    .unwrap_or(false)
+            })
+            .count();
         let _ = res.text().await;
-        Ok(cookies)
+        Ok(StatusRefreshResult {
+            set_cookies: cookies,
+            cloudfront_cookie_count,
+        })
     }
 
-    /// Extract CloudFront cookies from the response and the client cookie jar.
-    fn extract_cloudfront_cookies(&self, res: &reqwest::Response) -> Vec<(String, String)> {
+    fn extract_response_set_cookies(&self, res: &reqwest::Response) -> Vec<String> {
         let mut cookies = Vec::new();
 
-        // Extract from response cookies
-        for cookie in res.cookies() {
-            if CLOUDFRONT_COOKIE_NAMES.contains(&cookie.name()) {
-                cookies.push((cookie.name().to_string(), cookie.value().to_string()));
+        for value in &res.headers().get_all(SET_COOKIE) {
+            if let Ok(cookie) = value.to_str() {
+                cookies.push(cookie.to_string());
             }
         }
 
         cookies
+    }
+
+    fn extract_cloudfront_set_cookies(&self, res: &reqwest::Response) -> Vec<String> {
+        self.extract_response_set_cookies(res)
+            .into_iter()
+            .filter(|cookie| {
+                cookie
+                    .split_once('=')
+                    .map(|(name, _)| CLOUDFRONT_COOKIE_NAMES.contains(&name.trim()))
+                    .unwrap_or(false)
+            })
+            .collect()
     }
 
     /// Given a list of m3u8 URLs from event data, categorize them and rank candidates.

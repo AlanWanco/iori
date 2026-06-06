@@ -30,6 +30,8 @@ download-live-idle-timeout =
     默认值为 30 秒。适用于不会发布 EXT-X-ENDLIST 的伪直播回放，
     正常直播也可按需覆盖。
 
+download-no-live-idle-timeout = 禁用直播空闲超时自动停止行为。
+
 download-cache-in-menory-cache = 使用内存缓存，下载时不将缓存写入磁盘
 download-cache-temp-dir =
   临时目录

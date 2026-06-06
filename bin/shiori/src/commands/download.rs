@@ -1,7 +1,7 @@
 use super::inspect::{InspectorOptions, get_default_external_inspector};
 use crate::{
     ShioriApp,
-    commands::{ShioriArgs, update::check_update},
+    commands::ShioriArgs,
     i18n::ClapI18n,
     inspect::InspectPlaylist,
 };
@@ -140,7 +140,11 @@ where
             .cache(self.cache.into_cache()?)
             .merger(self.output.into_merger(self.extra.streams_hint)?)
             .stop_signal(stop_signal);
-        let live_idle_timeout = self.download.live_idle_timeout.map(Duration::from_secs);
+        let live_idle_timeout = if self.download.disable_live_idle_timeout {
+            None
+        } else {
+            self.download.live_idle_timeout.map(Duration::from_secs)
+        };
 
         match playlist_type {
             PlaylistType::HLS | PlaylistType::Unknown => {
@@ -162,6 +166,11 @@ where
                             }
                             _ => None,
                         };
+                        let eplus_refresh_interval = self
+                            .inspector_options
+                            .get_string("eplus-refresh-interval")
+                            .and_then(|value| value.parse::<u64>().ok())
+                            .map(Duration::from_secs);
 
                         // Use EplusSource which wraps HlsLiveSource with cookie refresh.
                         // The IoriHttp `http` has all cookies (session + CloudFront) from
@@ -177,7 +186,8 @@ where
                             eplus_credentials,
                         )?
                         .with_initial_segment_limit(self.download.initial_segments)
-                        .with_idle_timeout(live_idle_timeout);
+                        .with_idle_timeout(live_idle_timeout)
+                        .with_refresh_interval(eplus_refresh_interval);
                         downloader.download(source).await?;
                     } else {
                         log::warn!(
@@ -331,6 +341,9 @@ pub struct DownloadOptions {
     #[clap(about_ll = "download-live-idle-timeout")]
     #[clap(long, default_value = "30")]
     pub live_idle_timeout: Option<u64>,
+
+    #[clap(long = "no-live-idle-timeout")]
+    pub disable_live_idle_timeout: bool,
 }
 
 impl Default for DownloadOptions {
@@ -341,6 +354,7 @@ impl Default for DownloadOptions {
             manifest_retries: 3,
             initial_segments: None,
             live_idle_timeout: Some(30),
+            disable_live_idle_timeout: false,
         }
     }
 }
@@ -526,7 +540,7 @@ impl OutputOptions {
 type ShioriDownloadCommand = DownloadCommand<InspectorOptions>;
 
 #[handler(ShioriDownloadCommand)]
-pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> anyhow::Result<()> {
+pub async fn download(me: ShioriDownloadCommand, _shiori_args: ShioriArgs) -> anyhow::Result<()> {
     tracing::info!("Loading URL: {}", me.url);
     let shiori_context = ShioriContext::new(me.http.clone().into_client(&me.url));
     let (_, data) = get_default_external_inspector()
@@ -545,11 +559,6 @@ pub async fn download(me: ShioriDownloadCommand, shiori_args: ShioriArgs) -> any
         let command: ShioriDownloadCommand = playlist;
         let cmd = me.clone().merge(command);
         cmd.download(spawn_ctrlc_handler()).await?;
-    }
-
-    // Check for update, but do not throw error if failed
-    if shiori_args.update_check {
-        _ = check_update().await;
     }
     Ok(())
 }

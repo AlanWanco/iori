@@ -1,4 +1,4 @@
-use clap::{ArgAction, Parser, Subcommand, builder::styling};
+use clap::{Parser, Subcommand, builder::styling};
 use clap_handler::Handler;
 
 use crate::ll;
@@ -18,10 +18,6 @@ pub const STYLES: styling::Styles = styling::Styles::styled()
 #[clap(name = "shiori", version = env!("SHIORI_VERSION"), author, styles = STYLES)]
 #[clap(about = ll!("shiori-about"))]
 pub struct ShioriArgs {
-    /// Whether to skip update check
-    #[clap(long = "skip-update", action = ArgAction::SetFalse)]
-    update_check: bool,
-
     #[clap(subcommand)]
     command: ShioriCommand,
 }

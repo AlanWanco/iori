@@ -30,6 +30,8 @@ download-live-idle-timeout =
     Defaults to 30 seconds. Use it for pseudo-live archives that never
     publish EXT-X-ENDLIST, or override it for normal live streams if needed.
 
+download-no-live-idle-timeout = Disable live idle timeout auto-stop behavior.
+
 download-cache-in-menory-cache = Use in-memory cache and do not write cache to disk while downloading
 download-cache-temp-dir =
   Temporary directory

@@ -11,6 +11,8 @@ use crate::{
     util::mix::VecMix,
 };
 
+const MANIFEST_RECOVERY_DELAY: Duration = Duration::from_secs(2);
+
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
     /// If set, only keep the last N segments from the first playlist fetch.
@@ -65,6 +67,7 @@ impl StreamingSource for HlsLiveSource {
         tokio::spawn(async move {
             let mut is_first_fetch = true;
             let mut last_new_segment_at = tokio::time::Instant::now();
+            let mut consecutive_manifest_failures = 0u32;
             loop {
                 if sender.is_closed() {
                     break;
@@ -79,14 +82,30 @@ impl StreamingSource for HlsLiveSource {
                 {
                     Ok(v) => v,
                     Err(IoriError::ManifestFetchError) => {
-                        tracing::error!("Exceeded retry limit for fetching segments, exiting...");
-                        break;
+                        consecutive_manifest_failures = consecutive_manifest_failures.saturating_add(1);
+                        tracing::warn!(
+                            "Exceeded retry limit for fetching segments; waiting {} seconds before retrying live playlist (consecutive failures: {}).",
+                            MANIFEST_RECOVERY_DELAY.as_secs(),
+                            consecutive_manifest_failures
+                        );
+                        if let Some(timeout) = idle_timeout
+                            && last_new_segment_at.elapsed() >= timeout
+                        {
+                            tracing::warn!(
+                                "No new HLS segments received for {} seconds while recovering from manifest failures; stopping live playlist polling.",
+                                timeout.as_secs()
+                            );
+                            break;
+                        }
+                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                        continue;
                     }
                     Err(e) => {
                         tracing::error!("Failed to fetch segments: {e}");
                         break;
                     }
                 };
+                consecutive_manifest_failures = 0;
 
                 // On the first fetch, truncate each stream's segments to the last N
                 // so that we start close to the live edge instead of from the beginning.

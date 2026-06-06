@@ -83,6 +83,22 @@ impl HlsMediaPlaylistSource {
             .await?
         };
 
+        let playlist_last_media_sequence = playlist
+            .segments
+            .len()
+            .checked_sub(1)
+            .map(|last_index| playlist.media_sequence + last_index as u64);
+        let effective_latest_media_sequence = match (latest_media_sequence, playlist_last_media_sequence)
+        {
+            (Some(latest), Some(last)) if last < *latest => {
+                tracing::warn!(
+                    "Live playlist media sequence regressed from {latest} to {last}; treating this as a restarted stream."
+                );
+                None
+            }
+            _ => *latest_media_sequence,
+        };
+
         let mut key = None;
         let mut initial_segment = InitialSegment::None;
         let mut next_range_start = 0;
@@ -152,8 +168,8 @@ impl HlsMediaPlaylistSource {
             let format = SegmentFormat::from_filename(&filename);
 
             let media_sequence = playlist.media_sequence + i as u64;
-            if let Some(latest_media_sequence) = latest_media_sequence
-                && media_sequence <= *latest_media_sequence
+            if let Some(latest_media_sequence) = effective_latest_media_sequence
+                && media_sequence <= latest_media_sequence
             {
                 continue;
             }
