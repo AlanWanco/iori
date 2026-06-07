@@ -137,13 +137,6 @@ impl StreamingSource for EplusSource {
         &self,
         context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        // Spawn a background task that refreshes CloudFront cookies every 45 minutes.
-        //
-        // The `refresh_http` clone shares the same `Arc<CookieStoreMutex>` as the
-        // `context.client`. When the refresh GET to the event page returns Set-Cookie
-        // headers, reqwest automatically stores them in the shared cookie jar.
-        // The inner HlsLiveSource's segment fetches (using `context.client`) will then
-        // send the updated cookies.
         let refresh_http = self.http.clone();
         let playlist_url = self.playlist_url.clone();
         let event_url = self.event_url.clone();
@@ -171,67 +164,67 @@ impl StreamingSource for EplusSource {
 
                 let refresh_cycle = async {
                     let event_data = client.get_event_data(&event_url).await?;
-                        let cookies_before = refresh_http.export_cookies_for_url(&playlist_url);
-                        let previous_cookie_snapshot = refresh_http.snapshot_cookies();
+                    let cookies_before = refresh_http.export_cookies_for_url(&playlist_url);
+                    let previous_cookie_snapshot = refresh_http.snapshot_cookies();
 
-                        let mut status_cookie_count = 0usize;
-                        let mut status_probe_succeeded = false;
-                        if let Some(session_update_url) = event_data.session_update_url.as_deref() {
-                            log::info!(
-                                "[eplus] Refreshing CloudFront cookies via status API: {session_update_url}"
-                            );
-                            match status_client.refresh_status_cookies(session_update_url).await {
-                                Ok(status_result) => {
-                                    status_cookie_count = status_result.cloudfront_cookie_count;
-                                    log::info!(
-                                        "[eplus] Stateless status API returned {} CloudFront cookies.",
-                                        status_cookie_count
+                    let mut status_cookie_count = 0usize;
+                    let mut status_probe_succeeded = false;
+                    if let Some(session_update_url) = event_data.session_update_url.as_deref() {
+                        log::info!(
+                            "[eplus] Refreshing CloudFront cookies via status API: {session_update_url}"
+                        );
+                        match status_client.refresh_status_cookies(session_update_url).await {
+                            Ok(status_result) => {
+                                status_cookie_count = status_result.cloudfront_cookie_count;
+                                log::info!(
+                                    "[eplus] Stateless status API returned {} CloudFront cookies.",
+                                    status_cookie_count
+                                );
+                                if !status_result.set_cookies.is_empty() {
+                                    Self::replace_session_cookies(
+                                        &refresh_http,
+                                        session_update_url,
+                                        &status_result.set_cookies,
                                     );
-                                    if !status_result.set_cookies.is_empty() {
-                                        Self::replace_session_cookies(
-                                            &refresh_http,
-                                            session_update_url,
-                                            &status_result.set_cookies,
-                                        );
-                                        status_probe_succeeded =
-                                            Self::probe_playlist(&refresh_http, &playlist_url).await;
-                                    }
-                                }
-                                Err(error) => {
-                                    log::warn!(
-                                        "[eplus] Stateless status API cookie refresh failed: {error:#}"
-                                    );
+                                    status_probe_succeeded =
+                                        Self::probe_playlist(&refresh_http, &playlist_url).await;
                                 }
                             }
-                        } else {
-                            log::warn!(
-                                "[eplus] No streamSession/session_update_url found; falling back to event-page cookies."
-                            );
+                            Err(error) => {
+                                log::warn!(
+                                    "[eplus] Stateless status API cookie refresh failed: {error:#}"
+                                );
+                            }
                         }
-
-                        if !status_probe_succeeded {
-                            log::info!("[eplus] Restoring previous session cookies before fallback.");
-                            refresh_http.restore_cookies(previous_cookie_snapshot.clone());
-
-                            log::info!(
-                                "[eplus] Falling back to event-page CloudFront cookies for this refresh cycle."
-                            );
-                            let removed = refresh_http.clear_cookies_by_names(CLOUDFRONT_COOKIE_NAMES);
-                            log::info!(
-                                "[eplus] Replacing CloudFront cookies from event page fallback (removed {}).",
-                                removed
-                            );
-                            refresh_http.add_cookies(event_data.cloudfront_cookies.clone(), &event_url);
-                            let _ = Self::probe_playlist(&refresh_http, &playlist_url).await;
-                        }
-
-                        let cookies_after = refresh_http.export_cookies_for_url(&playlist_url);
-                        log::info!(
-                            "[eplus] CloudFront refresh finished. playlist cookies: {} -> {}, status api cookies: {}",
-                            cookies_before.len(),
-                            cookies_after.len(),
-                            status_cookie_count
+                    } else {
+                        log::warn!(
+                            "[eplus] No streamSession/session_update_url found; falling back to event-page cookies."
                         );
+                    }
+
+                    if !status_probe_succeeded {
+                        log::info!("[eplus] Restoring previous session cookies before fallback.");
+                        refresh_http.restore_cookies(previous_cookie_snapshot.clone());
+
+                        log::info!(
+                            "[eplus] Falling back to event-page CloudFront cookies for this refresh cycle."
+                        );
+                        let removed = refresh_http.clear_cookies_by_names(CLOUDFRONT_COOKIE_NAMES);
+                        log::info!(
+                            "[eplus] Replacing CloudFront cookies from event page fallback (removed {}).",
+                            removed
+                        );
+                        refresh_http.add_cookies(event_data.cloudfront_cookies.clone(), &event_url);
+                        let _ = Self::probe_playlist(&refresh_http, &playlist_url).await;
+                    }
+
+                    let cookies_after = refresh_http.export_cookies_for_url(&playlist_url);
+                    log::info!(
+                        "[eplus] CloudFront refresh finished. playlist cookies: {} -> {}, status api cookies: {}",
+                        cookies_before.len(),
+                        cookies_after.len(),
+                        status_cookie_count
+                    );
                     anyhow::Ok(())
                 };
 
@@ -336,8 +329,6 @@ impl StreamingSource for EplusSource {
             }
         });
 
-        // Delegate to the inner HlsLiveSource, passing through the context unchanged.
-        // The context.client already uses our shared cookie store.
         self.inner.segments_stream(context).await
     }
 }
