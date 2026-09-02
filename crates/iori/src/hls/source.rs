@@ -8,6 +8,7 @@ use crate::{
 use iori_hls::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
 use reqwest::{Client, Url};
 use std::{
+    collections::HashSet,
     hash::{Hash, Hasher},
     str::FromStr,
     sync::{
@@ -17,6 +18,12 @@ use std::{
 };
 
 use super::utils::load_playlist_with_retry;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SegmentIdentity {
+    url: Url,
+    byte_range: Option<(u64, Option<u64>)>,
+}
 
 /// Core part to perform network operations
 pub struct HlsMediaPlaylistSource {
@@ -35,6 +42,7 @@ pub struct HlsMediaPlaylistSource {
     sequence: AtomicU64,
 
     initial_playlist: Option<MediaPlaylist>,
+    previous_playlist_segments: HashSet<SegmentIdentity>,
 }
 
 /// A source to fetch segments from a Media Playlist
@@ -63,7 +71,21 @@ impl HlsMediaPlaylistSource {
             sequence: AtomicU64::new(0),
             stream_type,
             stream_id,
+            previous_playlist_segments: HashSet::new(),
         }
+    }
+
+    fn segment_identity(
+        playlist_url: &Url,
+        segment: &iori_hls::MediaSegment,
+    ) -> IoriResult<SegmentIdentity> {
+        Ok(SegmentIdentity {
+            url: playlist_url.join(&segment.uri)?,
+            byte_range: segment
+                .byte_range
+                .as_ref()
+                .map(|range| (range.length, range.offset)),
+        })
     }
 
     pub async fn load_segments(
@@ -83,18 +105,36 @@ impl HlsMediaPlaylistSource {
             .await?
         };
 
+        let current_playlist_segments = playlist
+            .segments
+            .iter()
+            .map(|segment| Self::segment_identity(&playlist_url, segment))
+            .collect::<IoriResult<HashSet<_>>>()?;
+        let playlist_overlaps_previous = current_playlist_segments
+            .iter()
+            .any(|segment| self.previous_playlist_segments.contains(segment));
+
         let playlist_last_media_sequence = playlist
             .segments
             .len()
             .checked_sub(1)
             .map(|last_index| playlist.media_sequence + last_index as u64);
-        let effective_latest_media_sequence = match (latest_media_sequence, playlist_last_media_sequence)
-        {
+        let effective_latest_media_sequence = match (
+            latest_media_sequence,
+            playlist_last_media_sequence,
+        ) {
             (Some(latest), Some(last)) if last < *latest => {
-                tracing::warn!(
-                    "Live playlist media sequence regressed from {latest} to {last}; treating this as a restarted stream."
-                );
-                None
+                if playlist_overlaps_previous {
+                    tracing::warn!(
+                        "Live playlist media sequence regressed from {latest} to {last}, but the playlist overlaps the previous window; treating it as a stale playlist."
+                    );
+                    Some(*latest)
+                } else {
+                    tracing::warn!(
+                        "Live playlist media sequence regressed from {latest} to {last} without overlapping the previous window; treating this as a restarted stream."
+                    );
+                    None
+                }
             }
             _ => *latest_media_sequence,
         };
@@ -202,6 +242,10 @@ impl HlsMediaPlaylistSource {
                     next_range_start += byte_range.length;
                 }
             }
+        }
+
+        if !current_playlist_segments.is_empty() {
+            self.previous_playlist_segments = current_playlist_segments;
         }
 
         Ok((segments, playlist_url, playlist))

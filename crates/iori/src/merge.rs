@@ -58,6 +58,10 @@ impl<C, M> IoriMerger<C, M> {
         Self::Pipe(PipeMerger::stdout(recycle))
     }
 
+    pub fn pipe_with_buffer(recycle: bool, buffer_segments: usize) -> Self {
+        Self::Pipe(PipeMerger::stdout_with_buffer(recycle, buffer_segments))
+    }
+
     pub fn pipe_to_writer(
         writer: impl AsyncWrite + Unpin + Send + Sync + 'static,
         recycle: bool,
@@ -84,6 +88,22 @@ impl<C, M> IoriMerger<C, M> {
             output_file,
             extra_commands,
             has_audio,
+        ))
+    }
+
+    pub fn pipe_mux_with_audio_buffer(
+        output_file: PathBuf,
+        recycle: bool,
+        extra_commands: Option<String>,
+        has_audio: bool,
+        buffer_segments: usize,
+    ) -> Self {
+        Self::Pipe(PipeMerger::mux_with_buffer(
+            recycle,
+            output_file,
+            extra_commands,
+            has_audio,
+            buffer_segments,
         ))
     }
 

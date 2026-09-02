@@ -40,6 +40,8 @@ type MergerType = iori_ffmpeg::FFmpegMerger;
 #[cfg(not(feature = "ffmpeg"))]
 type MergerType = iori::merge::MkvmergeMerger;
 
+const DEFAULT_NICO_RELAY_BUFFER_SEGMENTS: usize = 3;
+
 #[derive(Parser, Clone, Default)]
 #[clap(name = "download", visible_alias = "dl", short_flag = 'D')]
 pub struct DownloadCommand<I>
@@ -120,6 +122,15 @@ where
             segment_retries: self.download.segment_retries,
         };
 
+        let pipe_buffer_segments = if self.extra.platform.as_deref() == Some("niconico") {
+            self.inspector_options
+                .get_string("nico-relay-buffer-segments")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(DEFAULT_NICO_RELAY_BUFFER_SEGMENTS)
+        } else {
+            0
+        };
+
         let playlist_type = match self.extra.playlist_type {
             Some(ty) => ty,
             None => detect_manifest_type(&self.url, &context.client)
@@ -138,7 +149,10 @@ where
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
-            .merger(self.output.into_merger(self.extra.streams_hint)?)
+            .merger(
+                self.output
+                    .into_merger(self.extra.streams_hint, pipe_buffer_segments)?,
+            )
             .stop_signal(stop_signal);
         let live_idle_timeout = if self.download.disable_live_idle_timeout {
             None
@@ -483,6 +497,7 @@ impl OutputOptions {
     pub fn into_merger(
         self,
         streams_hint: Option<u32>,
+        pipe_buffer_segments: usize,
     ) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
         Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
@@ -494,20 +509,21 @@ impl OutputOptions {
             IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux_with_audio(
+                IoriMerger::pipe_mux_with_audio_buffer(
                     self.output.unwrap_or("-".into()),
                     self.recycle,
                     None,
                     streams_hint.unwrap_or(1) > 1,
+                    pipe_buffer_segments,
                 )
             } else if let Some(file) = self.output {
                 if file.to_string_lossy() == "-" {
-                    IoriMerger::pipe(self.recycle)
+                    IoriMerger::pipe_with_buffer(self.recycle, pipe_buffer_segments)
                 } else {
                     IoriMerger::pipe_to_file(file, self.recycle)
                 }
             } else {
-                IoriMerger::pipe(self.recycle)
+                IoriMerger::pipe_with_buffer(self.recycle, pipe_buffer_segments)
             }
         } else if let Some(mut output) = self.output {
             if output.exists() {

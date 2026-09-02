@@ -5,7 +5,12 @@ use crate::{
     error::IoriResult,
     util::{ordered_stream::OrderedStream, path::DuplicateOutputFileNamer},
 };
-use std::{path::PathBuf, pin::Pin, process::Stdio};
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+    pin::Pin,
+    process::Stdio,
+};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     process::Command,
@@ -18,6 +23,52 @@ type SendSegment = (
     StreamType,
     Pin<Box<dyn Future<Output = IoriResult<()>> + Send>>,
 );
+
+fn is_live_output(output: &Path) -> bool {
+    let output = output.to_string_lossy();
+    output.starts_with("rtmp://") || output.starts_with("rtmps://")
+}
+
+struct SegmentBuffer<T> {
+    items: VecDeque<(u64, T)>,
+    target: usize,
+    primed: bool,
+    ended: bool,
+}
+
+impl<T> SegmentBuffer<T> {
+    fn new(target: usize) -> Self {
+        Self {
+            items: VecDeque::new(),
+            target,
+            primed: false,
+            ended: false,
+        }
+    }
+
+    async fn next(&mut self, stream: &mut OrderedStream<T>) -> Option<(u64, T)> {
+        if !self.primed {
+            while self.items.len() <= self.target {
+                let Some(item) = stream.next().await else {
+                    self.ended = true;
+                    break;
+                };
+                self.items.push_back(item);
+            }
+            self.primed = true;
+        }
+
+        if let Some(item) = self.items.pop_front() {
+            return Some(item);
+        }
+
+        if self.ended {
+            None
+        } else {
+            stream.next().await
+        }
+    }
+}
 
 /// PipeMerger is a merger that pipes the segments directly to the output.
 ///
@@ -32,18 +83,28 @@ pub struct PipeMerger {
 
 impl PipeMerger {
     pub fn stdout(recycle: bool) -> Self {
-        Self::writer(recycle, tokio::io::stdout())
+        Self::stdout_with_buffer(recycle, 0)
     }
 
-    pub fn writer(
+    pub fn stdout_with_buffer(recycle: bool, buffer_segments: usize) -> Self {
+        Self::writer_with_buffer(recycle, tokio::io::stdout(), buffer_segments)
+    }
+
+    pub fn writer(recycle: bool, writer: impl AsyncWrite + Unpin + Send + Sync + 'static) -> Self {
+        Self::writer_with_buffer(recycle, writer, 0)
+    }
+
+    pub fn writer_with_buffer(
         recycle: bool,
         mut writer: impl AsyncWrite + Unpin + Send + Sync + 'static,
+        buffer_segments: usize,
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut stream: OrderedStream<Option<SendSegment>> = OrderedStream::new(rx);
         let future = tokio::spawn(async move {
-            while let Some((_, segment)) = stream.next().await {
+            let mut buffered = SegmentBuffer::new(buffer_segments);
+            while let Some((_, segment)) = buffered.next(&mut stream).await {
                 if let Some((mut reader, _type, invalidate)) = segment {
                     _ = tokio::io::copy(&mut reader, &mut writer).await;
                     if recycle {
@@ -107,6 +168,16 @@ impl PipeMerger {
         extra_command: Option<String>,
         has_audio: bool,
     ) -> Self {
+        Self::mux_with_buffer(recycle, output, extra_command, has_audio, 0)
+    }
+
+    pub fn mux_with_buffer(
+        recycle: bool,
+        output: PathBuf,
+        extra_command: Option<String>,
+        has_audio: bool,
+        buffer_segments: usize,
+    ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut stream: OrderedStream<Option<SendSegment>> = OrderedStream::new(rx);
@@ -163,7 +234,10 @@ impl PipeMerger {
 
                 command.args(["-y", "-fflags", "+genpts"]); // , "-loglevel", "quiet"
 
-                if extra_for_initial.is_some() {
+                if extra_for_initial.is_some()
+                    || buffer_segments > 0
+                    || is_live_output(&output_for_initial)
+                {
                     command.arg("-re");
                 }
 
@@ -194,8 +268,7 @@ impl PipeMerger {
                 if let Some(dest) = extra_for_initial.and_then(|s| shlex::split(&s)) {
                     command.args(dest);
                 } else {
-                    let output_str = output_for_initial.to_string_lossy();
-                    if output_str.starts_with("rtmp://") {
+                    if is_live_output(&output_for_initial) {
                         command.args(["-f", "flv"]).arg(output_for_initial);
                     } else {
                         command
@@ -297,7 +370,10 @@ impl PipeMerger {
                                 }
 
                                 command.args(["-y", "-fflags", "+genpts"]);
-                                if extra_command.is_some() {
+                                if extra_command.is_some()
+                                    || buffer_segments > 0
+                                    || is_live_output(&output)
+                                {
                                     command.arg("-re");
                                 }
                                 command.args(["-i", "pipe:0"]);
@@ -324,8 +400,7 @@ impl PipeMerger {
                                 if let Some(dest) = extra_command.and_then(|s| shlex::split(&s)) {
                                     command.args(dest);
                                 } else {
-                                    let output_str = output.to_string_lossy();
-                                    if output_str.starts_with("rtmp://") {
+                                    if is_live_output(&output) {
                                         command.args(["-f", "flv"]).arg(output);
                                     } else {
                                         command.args(["-f", "mpegts", "-shortest"]).arg(output);
@@ -428,7 +503,8 @@ impl PipeMerger {
                 }
             });
 
-            while let Some((_, segment)) = stream.next().await {
+            let mut buffered = SegmentBuffer::new(buffer_segments);
+            while let Some((_, segment)) = buffered.next(&mut stream).await {
                 if let Some((reader, r#type, invalidate)) = segment {
                     match r#type {
                         StreamType::Video => {
@@ -530,5 +606,30 @@ impl Merger for PipeMerger {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SegmentBuffer;
+    use crate::util::ordered_stream::OrderedStream;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn segment_buffer_drains_primed_items_during_input_pause() {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        for sequence in 0..4 {
+            sender.send((0, sequence, sequence)).unwrap();
+        }
+        drop(sender);
+
+        let mut stream = OrderedStream::new(receiver);
+        let mut buffer = SegmentBuffer::new(3);
+
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 0)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 1)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 2)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 3)));
+        assert_eq!(buffer.next(&mut stream).await, None);
     }
 }
