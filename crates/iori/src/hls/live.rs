@@ -13,6 +13,7 @@ use crate::{
 
 const MANIFEST_RECOVERY_DELAY: Duration = Duration::from_secs(2);
 
+#[derive(Clone)]
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
     /// If set, only keep the last N segments from the first playlist fetch.
@@ -46,6 +47,16 @@ impl HlsLiveSource {
     pub fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
         self.idle_timeout = timeout;
         self
+    }
+
+    /// Replace the active playlist URL without resetting segment sequence state.
+    pub async fn update_playlist_url(
+        &self,
+        context: &IoriContext,
+        m3u8_url: &str,
+    ) -> IoriResult<bool> {
+        let url = Url::parse(m3u8_url)?;
+        self.playlist.lock().await.update_url(context, url).await
     }
 }
 
@@ -82,7 +93,8 @@ impl StreamingSource for HlsLiveSource {
                 {
                     Ok(v) => v,
                     Err(IoriError::ManifestFetchError) => {
-                        consecutive_manifest_failures = consecutive_manifest_failures.saturating_add(1);
+                        consecutive_manifest_failures =
+                            consecutive_manifest_failures.saturating_add(1);
                         tracing::warn!(
                             "Exceeded retry limit for fetching segments; waiting {} seconds before retrying live playlist (consecutive failures: {}).",
                             MANIFEST_RECOVERY_DELAY.as_secs(),
@@ -101,23 +113,11 @@ impl StreamingSource for HlsLiveSource {
                         continue;
                     }
                     Err(e) => {
-                        consecutive_manifest_failures = consecutive_manifest_failures.saturating_add(1);
-                        tracing::warn!(
-                            "Failed to fetch live playlist segments; waiting {} seconds before retrying (consecutive failures: {}). {e}",
-                            MANIFEST_RECOVERY_DELAY.as_secs(),
-                            consecutive_manifest_failures
-                        );
-                        if let Some(timeout) = idle_timeout
-                            && last_new_segment_at.elapsed() >= timeout
-                        {
-                            tracing::warn!(
-                                "No new HLS segments received for {} seconds while recovering from playlist request failures; stopping live playlist polling.",
-                                timeout.as_secs()
-                            );
-                            break;
+                        tracing::error!("Failed to process live playlist segments: {e}");
+                        if sender.send(Err(e)).is_err() {
+                            tracing::debug!("Failed to report live playlist segment error");
                         }
-                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
-                        continue;
+                        break;
                     }
                 };
                 consecutive_manifest_failures = 0;

@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use iori::{StreamingSource, context::IoriContext, hls::HlsLiveSource};
+use iori::{InitialSegment, StreamingSource, context::IoriContext, hls::HlsLiveSource};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -7,7 +7,7 @@ use std::sync::{
 use tokio::time::{Duration, timeout};
 use wiremock::{
     Mock, MockServer, Request, Respond, ResponseTemplate,
-    matchers::{method, path},
+    matchers::{header, method, path},
 };
 
 struct PlaylistSequenceResponder {
@@ -53,6 +53,20 @@ impl Respond for StalePlaylistResponder {
             _ => media_playlist(1003, 1),
         };
         ResponseTemplate::new(200).set_body_string(body)
+    }
+}
+
+struct ReusedSegmentUriResponder {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Respond for ReusedSegmentUriResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let media_sequence = if call == 0 { 100 } else { 0 };
+        ResponseTemplate::new(200).set_body_string(format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:{media_sequence}\n#EXTINF:10.0,\nreused.ts\n"
+        ))
     }
 }
 
@@ -118,5 +132,197 @@ async fn live_source_ignores_overlapping_stale_playlist_window() -> anyhow::Resu
     assert_eq!(second_batch.len(), 1);
     assert_eq!(second_batch[0].media_sequence, 1003);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_detects_restart_when_segment_uri_is_reused() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ReusedSegmentUriResponder {
+            calls: Arc::new(AtomicUsize::new(0)),
+        })
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let first_batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("first batch should arrive")?;
+    assert_eq!(first_batch[0].media_sequence, 100);
+
+    let second_batch = timeout(Duration::from_secs(3), stream.next())
+        .await?
+        .expect("restarted playlist should arrive")?;
+    assert_eq!(second_batch[0].media_sequence, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_switches_master_playlist_url_without_resetting_sequence() -> anyhow::Result<()>
+{
+    let mock_server = MockServer::start().await;
+    let old_master = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=100,RESOLUTION=640x360\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=200,RESOLUTION=1280x720\nhigh.m3u8\n";
+    let new_master = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=100,RESOLUTION=640x360\nlow-new.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=200,RESOLUTION=1280x720\nhigh-new.m3u8\n";
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(old_master))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/rotated.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(new_master))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/high.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(0, 1)))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/high-new.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(1, 1)))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/segment0.ts"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes([0]))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/segment1.ts"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes([1]))
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let first_batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("first batch should arrive")?;
+    assert_eq!(first_batch[0].media_sequence, 0);
+    assert_eq!(first_batch[0].sequence, 0);
+
+    assert!(
+        source
+            .update_playlist_url(&context, &format!("{}/rotated.m3u8", mock_server.uri()))
+            .await?
+    );
+
+    let second_batch = timeout(Duration::from_secs(3), stream.next())
+        .await?
+        .expect("rotated master playlist should arrive")?;
+    assert_eq!(second_batch[0].media_sequence, 1);
+    assert_eq!(second_batch[0].sequence, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_switches_playlist_url_without_resetting_sequence() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(0, 1)))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/rotated.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(1, 1)))
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let first_batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("first batch should arrive")?;
+    assert_eq!(first_batch[0].media_sequence, 0);
+    assert_eq!(first_batch[0].sequence, 0);
+
+    assert!(
+        source
+            .update_playlist_url(&context, &format!("{}/rotated.m3u8", mock_server.uri()))
+            .await?
+    );
+
+    let second_batch = timeout(Duration::from_secs(3), stream.next())
+        .await?
+        .expect("rotated playlist should arrive")?;
+    assert_eq!(second_batch[0].media_sequence, 1);
+    assert_eq!(second_batch[0].sequence, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_propagates_failed_initial_segment() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:10.0,\nsegment0.m4s\n#EXT-X-ENDLIST\n",
+        ))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/init.mp4"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+    let result = timeout(Duration::from_secs(3), stream.next()).await?;
+
+    assert!(matches!(result, Some(Err(_))));
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_requests_initial_segment_byte_range() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+    let initial_segment = b"initial bytes";
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\",BYTERANGE=\"12@5\"\n#EXTINF:10.0,\nsegment0.m4s\n#EXT-X-ENDLIST\n",
+        ))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/init.mp4"))
+        .and(header("Range", "bytes=5-16"))
+        .respond_with(ResponseTemplate::new(206).set_body_bytes(initial_segment))
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+    let batch = timeout(Duration::from_secs(3), stream.next())
+        .await?
+        .expect("initial segment should arrive")?;
+
+    assert_eq!(batch.len(), 1);
+    assert_eq!(
+        batch[0].initial_segment,
+        InitialSegment::Clear(std::sync::Arc::new(initial_segment.to_vec()))
+    );
     Ok(())
 }

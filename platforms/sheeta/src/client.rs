@@ -19,15 +19,17 @@ pub struct SheetaClient {
 impl SheetaClient {
     pub fn site_regex(host: &str) -> regex::Regex {
         regex::Regex::new(&format!(
-            r#"https://(?<host>{})/(?:[^/]+/)?(?:video|live)/(?<video_id>.+)"#,
+            r#"https://(?<host>{})/(?:(?<channel>[^/?#]+)/)?(?:video|live)/(?<video_id>[^/?#]+)(?:[?#].*)?$"#,
             host.replace(".", "\\.")
         ))
         .unwrap()
     }
 
     pub fn wild_regex() -> regex::Regex {
-        regex::Regex::new(r#"https://(?<host>[^/]+)/(?:[^/]+/)?(?:video|live)/(?<video_id>.+)"#)
-            .unwrap()
+        regex::Regex::new(
+            r#"https://(?<host>[^/]+)/(?:(?<channel>[^/?#]+)/)?(?:video|live)/(?<video_id>[^/?#]+)(?:[?#].*)?$"#,
+        )
+        .unwrap()
     }
 
     pub fn nico_channel_plus(client: Client) -> Self {
@@ -44,6 +46,7 @@ impl SheetaClient {
             .header(USER_AGENT, get_chrome_rua())
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?;
         Ok(Self::new(
@@ -76,6 +79,7 @@ impl SheetaClient {
             )])
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?;
         Ok(response.fc_site_id())
@@ -93,10 +97,11 @@ impl SheetaClient {
             .get(url)
             .header(USER_AGENT, get_chrome_rua())
             .header(ORIGIN, HeaderValue::from_str(self.origin())?)
-            .header("fc_site_id", fc_site_id) // FIXME: get correct site_id
+            .header("fc_site_id", fc_site_id)
             .header("fc_use_device", HeaderValue::from_static("null"))
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?;
         Ok(response)
@@ -115,6 +120,7 @@ impl SheetaClient {
             .json(&json!({}))
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?;
         Ok(response.session_id())
@@ -141,21 +147,36 @@ mod tests {
         let captures = regex
             .captures("https://nicochannel.jp/not-equal-me-plus/video/smLzU6uZ2LnUvqeDBtoXSxvr")
             .unwrap();
+        assert_eq!(captures.name("host").unwrap().as_str(), "nicochannel.jp");
         assert_eq!(
-            captures.get(1).unwrap().as_str(),
+            captures.name("channel").unwrap().as_str(),
+            "not-equal-me-plus"
+        );
+        assert_eq!(
+            captures.name("video_id").unwrap().as_str(),
             "smLzU6uZ2LnUvqeDBtoXSxvr"
         );
 
         let captures = regex
             .captures("https://nicochannel.jp/video/smLzU6uZ2LnUvqeDBtoXSxvr")
             .unwrap();
+        assert!(captures.name("channel").is_none());
         assert_eq!(
-            captures.get(1).unwrap().as_str(),
+            captures.name("video_id").unwrap().as_str(),
+            "smLzU6uZ2LnUvqeDBtoXSxvr"
+        );
+
+        let captures = regex
+            .captures("https://nicochannel.jp/video/smLzU6uZ2LnUvqeDBtoXSxvr?from=archive")
+            .unwrap();
+        assert_eq!(
+            captures.name("video_id").unwrap().as_str(),
             "smLzU6uZ2LnUvqeDBtoXSxvr"
         );
     }
 
     #[tokio::test]
+    #[ignore = "requires a live Sheeta API session"]
     async fn test_get_session_id() {
         let client = SheetaClient::nico_channel_plus(Default::default());
         let session_id = client
@@ -166,7 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_video_url() -> anyhow::Result<()> {
+    async fn test_get_video_url() {
         let client = SheetaClient::new(
             "https://api.nicochannel.jp".to_string(),
             "https://nicochannel.jp".to_string(),
@@ -176,8 +197,9 @@ mod tests {
         let video_url = client
             .get_video_url("39447efb-e081-4b16-8984-7ee8da96bfe0")
             .await;
-        let response = reqwest::get(video_url).await?;
-        println!("response: {:?}", response.text().await?);
-        Ok(())
+        assert_eq!(
+            video_url,
+            "https://hls-auth.cloud.stream.co.jp/auth/index.m3u8?session_id=39447efb-e081-4b16-8984-7ee8da96bfe0"
+        );
     }
 }

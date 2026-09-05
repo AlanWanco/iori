@@ -75,6 +75,7 @@ pub struct SegmentInfo {
     pub duration: Option<f64>,
     pub format: SegmentFormat,
     pub part_index: u64,
+    pub synchronization_key: Option<(u64, u64)>,
 }
 
 impl<T> From<&T> for SegmentInfo
@@ -92,6 +93,7 @@ where
             stream_type: segment.stream_type(),
             format: segment.format(),
             part_index: segment.part_index(),
+            synchronization_key: segment.synchronization_key(),
         }
     }
 }
@@ -132,6 +134,10 @@ impl StreamingSegment for Box<dyn StreamingSegment + Send + Sync + '_> {
     fn part_index(&self) -> u64 {
         self.as_ref().part_index()
     }
+
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        self.as_ref().synchronization_key()
+    }
 }
 
 impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
@@ -169,6 +175,10 @@ impl StreamingSegment for &Box<dyn StreamingSegment + Send + Sync + '_> {
 
     fn part_index(&self) -> u64 {
         self.as_ref().part_index()
+    }
+
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        self.as_ref().synchronization_key()
     }
 }
 

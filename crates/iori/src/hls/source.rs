@@ -6,7 +6,7 @@ use crate::{
     hls::{segment::M3u8Segment, utils::load_m3u8},
 };
 use iori_hls::{AlternativeMedia, AlternativeMediaType, MediaPlaylist, Playlist};
-use reqwest::{Client, Url};
+use reqwest::{Client, Url, header::RANGE};
 use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
@@ -23,6 +23,8 @@ use super::utils::load_playlist_with_retry;
 struct SegmentIdentity {
     url: Url,
     byte_range: Option<(u64, Option<u64>)>,
+    media_sequence: u64,
+    part_index: u64,
 }
 
 /// Core part to perform network operations
@@ -75,8 +77,16 @@ impl HlsMediaPlaylistSource {
         }
     }
 
+    fn update_url(&mut self, url: Url) {
+        self.url = url.to_string();
+        // The cached playlist belongs to the old URL. Keep the sequence and
+        // previous-window state so a rotated URL can continue the same stream.
+        self.initial_playlist = None;
+    }
+
     fn segment_identity(
         playlist_url: &Url,
+        media_sequence: u64,
         segment: &iori_hls::MediaSegment,
     ) -> IoriResult<SegmentIdentity> {
         Ok(SegmentIdentity {
@@ -85,6 +95,8 @@ impl HlsMediaPlaylistSource {
                 .byte_range
                 .as_ref()
                 .map(|range| (range.length, range.offset)),
+            media_sequence,
+            part_index: segment.part_index,
         })
     }
 
@@ -108,7 +120,14 @@ impl HlsMediaPlaylistSource {
         let current_playlist_segments = playlist
             .segments
             .iter()
-            .map(|segment| Self::segment_identity(&playlist_url, segment))
+            .enumerate()
+            .map(|(index, segment)| {
+                Self::segment_identity(
+                    &playlist_url,
+                    playlist.media_sequence + index as u64,
+                    segment,
+                )
+            })
             .collect::<IoriResult<HashSet<_>>>()?;
         let playlist_overlaps_previous = current_playlist_segments
             .iter()
@@ -163,7 +182,10 @@ impl HlsMediaPlaylistSource {
                 loop {
                     retries -= 1;
 
-                    match self.load_bytes(&context.client, url.clone()).await {
+                    match self
+                        .load_bytes(&context.client, url.clone(), m.byte_range.as_ref())
+                        .await
+                    {
                         Ok(bytes) => {
                             initial_segment = if m.encrypted {
                                 InitialSegment::Encrypted(Arc::new(bytes))
@@ -251,8 +273,26 @@ impl HlsMediaPlaylistSource {
         Ok((segments, playlist_url, playlist))
     }
 
-    async fn load_bytes(&self, client: &Client, url: Url) -> IoriResult<Vec<u8>> {
-        Ok(client.get(url).send().await?.bytes().await?.to_vec())
+    async fn load_bytes(
+        &self,
+        client: &Client,
+        url: Url,
+        byte_range: Option<&iori_hls::ByteRange>,
+    ) -> IoriResult<Vec<u8>> {
+        let mut request = client.get(url);
+        if let Some(byte_range) = byte_range {
+            let offset = byte_range.offset.unwrap_or(0);
+            let end = offset + byte_range.length - 1;
+            request = request.header(RANGE, format!("bytes={offset}-{end}"));
+        }
+
+        Ok(request
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?
+            .to_vec())
     }
 }
 
@@ -269,6 +309,7 @@ pub struct HlsPlaylistSource {
     streams: Vec<HlsMediaPlaylistSource>,
 
     key: Option<String>,
+    playlist_is_master: Option<bool>,
 }
 
 impl HlsPlaylistSource {
@@ -277,7 +318,140 @@ impl HlsPlaylistSource {
             url,
             key: key.map(str::to_string),
             streams: Vec::new(),
+            playlist_is_master: None,
         }
+    }
+
+    fn selected_master_streams(
+        url: &Url,
+        mut playlist: iori_hls::MasterPlaylist,
+    ) -> IoriResult<Vec<(String, Option<StreamType>, u64)>> {
+        // Get the best variant.
+        playlist.variants.sort_by(|a, b| {
+            // compare resolution first
+            if let (Some(a), Some(b)) = (a.resolution, b.resolution)
+                && a.width != b.width
+            {
+                return b.width.cmp(&a.width);
+            }
+
+            // compare framerate then
+            if let (Some(a), Some(b)) = (a.frame_rate, b.frame_rate) {
+                let a = *a as u64;
+                let b = *b as u64;
+                if a != b {
+                    return b.cmp(&a);
+                }
+            }
+
+            // compare bandwidth finally
+            b.bandwidth.cmp(&a.bandwidth)
+        });
+        let variant = playlist.variants.first().expect("No variant found");
+        let variant_url = url.join(&variant.uri)?.to_string();
+        let mut streams = vec![(variant_url, Some(StreamType::Video), 0)];
+
+        fn load_variant<'a>(
+            group_id: &str,
+            media_type: AlternativeMediaType,
+            alternatives: &'a [AlternativeMedia],
+        ) -> Option<&'a str> {
+            let alternatives: Vec<_> = alternatives
+                .iter()
+                .filter(|alternative| {
+                    alternative.group_id == group_id && alternative.media_type == media_type
+                })
+                .collect();
+
+            let best = alternatives
+                .iter()
+                .find(|alternative| alternative.default && alternative.autoselect)
+                .or_else(|| alternatives.first());
+
+            best.and_then(|alternative| alternative.uri.as_deref())
+        }
+
+        // Load extra streams from the selected variant.
+        if let Some(group_id) = &variant.audio
+            && let Some(audio_url) = load_variant(
+                group_id,
+                AlternativeMediaType::Audio,
+                &playlist.alternatives,
+            )
+        {
+            let m3u8_url = url.join(audio_url)?.to_string();
+            if !streams
+                .iter()
+                .any(|(stream_url, _, _)| stream_url == &m3u8_url)
+            {
+                streams.push((m3u8_url, Some(StreamType::Audio), 1));
+            }
+        }
+        if let Some(group_id) = &variant.video
+            && let Some(video_url) = load_variant(
+                group_id,
+                AlternativeMediaType::Video,
+                &playlist.alternatives,
+            )
+        {
+            let m3u8_url = url.join(video_url)?.to_string();
+            if !streams
+                .iter()
+                .any(|(stream_url, _, _)| stream_url == &m3u8_url)
+            {
+                streams.push((m3u8_url, Some(StreamType::Video), 2));
+            }
+        }
+
+        Ok(streams)
+    }
+
+    /// Replace the playlist URL while preserving stream sequence state.
+    ///
+    /// When the current URL is a master playlist, fetch the replacement master
+    /// and update its selected variant URLs before switching. This keeps the
+    /// existing media stream state instead of restarting the downloader.
+    pub async fn update_url(&mut self, context: &IoriContext, url: Url) -> IoriResult<bool> {
+        if self.url == url {
+            return Ok(false);
+        }
+        if self.streams.is_empty() {
+            self.url = url;
+            return Ok(true);
+        }
+
+        let playlist =
+            load_playlist_with_retry(&context.client, &url, context.manifest_retries).await?;
+        let stream_urls = match playlist {
+            Playlist::MasterPlaylist(playlist) if self.playlist_is_master == Some(true) => {
+                Self::selected_master_streams(&url, playlist)?
+            }
+            Playlist::MediaPlaylist(_) if self.playlist_is_master == Some(false) => {
+                if self.streams.len() != 1 {
+                    return Ok(false);
+                }
+                vec![(url.to_string(), Some(StreamType::Video), 0)]
+            }
+            _ => return Ok(false),
+        };
+
+        if stream_urls.len() != self.streams.len()
+            || self
+                .streams
+                .iter()
+                .zip(&stream_urls)
+                .any(|(stream, (_, stream_type, stream_id))| {
+                    stream.stream_type != *stream_type || stream.stream_id != *stream_id
+                })
+        {
+            return Ok(false);
+        }
+
+        for (stream, (stream_url, _, _)) in self.streams.iter_mut().zip(stream_urls) {
+            stream.update_url(Url::parse(&stream_url)?);
+        }
+        self.url = url;
+        Ok(true)
     }
 
     pub async fn load_streams(&mut self, context: &IoriContext) -> IoriResult<Vec<Option<u64>>> {
@@ -285,92 +459,24 @@ impl HlsPlaylistSource {
             load_playlist_with_retry(&context.client, &self.url, context.manifest_retries).await?;
 
         match playlist {
-            Playlist::MasterPlaylist(mut pl) => {
-                // Get the best variant
-                let variants = &mut pl.variants;
-                variants.sort_by(|a, b| {
-                    // compare resolution first
-                    if let (Some(a), Some(b)) = (a.resolution, b.resolution)
-                        && a.width != b.width
-                    {
-                        return b.width.cmp(&a.width);
-                    }
-
-                    // compare framerate then
-                    if let (Some(a), Some(b)) = (a.frame_rate, b.frame_rate) {
-                        let a = *a as u64;
-                        let b = *b as u64;
-                        if a != b {
-                            return b.cmp(&a);
-                        }
-                    }
-
-                    // compare bandwidth finally
-                    b.bandwidth.cmp(&a.bandwidth)
-                });
-                let variant = variants.first().expect("No variant found");
-                let variant_url = self.url.join(&variant.uri)?;
-                self.streams.push(HlsMediaPlaylistSource::new(
-                    variant_url.to_string(),
-                    None,
-                    self.key.as_deref(),
-                    Some(StreamType::Video),
-                    0,
-                ));
-
-                fn load_variant<'a>(
-                    group_id: &str,
-                    media_type: AlternativeMediaType,
-                    pl: &'a [AlternativeMedia],
-                ) -> Option<&'a str> {
-                    let alternatives: Vec<_> = pl
-                        .iter()
-                        .filter(|alternative| {
-                            alternative.group_id == group_id && alternative.media_type == media_type
-                        })
-                        .collect();
-
-                    let best = alternatives
-                        .iter()
-                        .find(|alternative| alternative.default && alternative.autoselect)
-                        .or_else(|| alternatives.first());
-
-                    best.and_then(|b| b.uri.as_deref())
-                }
-
-                // Load extra streams from the variant
-                if let Some(group_id) = &variant.audio
-                    && let Some(audio_url) =
-                        load_variant(group_id, AlternativeMediaType::Audio, &pl.alternatives)
+            Playlist::MasterPlaylist(pl) => {
+                self.playlist_is_master = Some(true);
+                for (m3u8_url, stream_type, stream_id) in
+                    Self::selected_master_streams(&self.url, pl)?
                 {
-                    let m3u8_url = self.url.join(audio_url)?.to_string();
-                    if !self.streams.iter().any(|s| s.url == m3u8_url) {
+                    if !self.streams.iter().any(|stream| stream.url == m3u8_url) {
                         self.streams.push(HlsMediaPlaylistSource::new(
                             m3u8_url,
                             None,
                             self.key.as_deref(),
-                            Some(StreamType::Audio),
-                            1,
-                        ));
-                    }
-                }
-                if let Some(group_id) = &variant.video
-                    && let Some(video_url) =
-                        load_variant(group_id, AlternativeMediaType::Video, &pl.alternatives)
-                {
-                    let m3u8_url = self.url.join(video_url)?.to_string();
-                    if !self.streams.iter().any(|s| s.url == m3u8_url) {
-                        self.streams.push(HlsMediaPlaylistSource::new(
-                            self.url.join(video_url)?.to_string(),
-                            None,
-                            self.key.as_deref(),
-                            Some(StreamType::Video),
-                            2,
+                            stream_type,
+                            stream_id,
                         ));
                     }
                 }
             }
             Playlist::MediaPlaylist(pl) => {
+                self.playlist_is_master = Some(false);
                 self.streams.push(HlsMediaPlaylistSource::new(
                     self.url.to_string(),
                     Some(pl),

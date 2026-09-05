@@ -1,10 +1,5 @@
 use super::inspect::{InspectorOptions, get_default_external_inspector};
-use crate::{
-    ShioriApp,
-    commands::ShioriArgs,
-    i18n::ClapI18n,
-    inspect::InspectPlaylist,
-};
+use crate::{ShioriApp, commands::ShioriArgs, i18n::ClapI18n, inspect::InspectPlaylist};
 use clap::{Args, Parser};
 use clap_handler::handler;
 use fake_user_agent::get_chrome_rua;
@@ -95,9 +90,9 @@ where
 
         // For eplus, cookies from the inspect phase include both CDN-domain cookies
         // (CloudFront, for stream.live.eplus.jp) and session cookies (for live.eplus.jp).
-        // `into_client` adds all of them under the playlist URL domain (the CDN domain).
-        // We need to also add them under the event URL domain so the cookie refresh task
-        // can send session cookies when re-fetching the event page.
+        // CloudFront entries retain their Set-Cookie Domain/Path attributes, so adding
+        // the same list under the event URL does not make them visible to the event page;
+        // it only makes the session cookies available to the refresh task.
         let eplus_event_cookies = if self.extra.platform.as_deref() == Some("eplus") {
             self.extra
                 .original_url
@@ -109,8 +104,8 @@ where
 
         let http = self.http.into_client(&self.url);
 
-        // Add cookies to the event URL domain so reqwest sends session cookies
-        // when the refresh task GETs the event page.
+        // Parse the same cookie list against the event URL so reqwest sends session
+        // cookies when the refresh task GETs the event page.
         if let Some((cookies, event_url)) = &eplus_event_cookies {
             http.add_cookies(cookies.clone(), event_url);
         }

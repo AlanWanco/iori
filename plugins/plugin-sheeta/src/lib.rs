@@ -77,10 +77,16 @@ impl Inspect for SheetaInspector {
             .with_context(|| "Missing sheeta video id")?
             .as_str();
 
-        let session_id = client.get_session_id(0, video_id).await?;
+        let fc_site_id = if let Some(channel) = captures.name("channel") {
+            client.get_fc_site_id(channel.as_str()).await?
+        } else {
+            0
+        };
+        let session_id = client.get_session_id(fc_site_id, video_id).await?;
         let video_url = client.get_video_url(&session_id).await;
         Ok(InspectResult::Playlist(InspectPlaylist {
             playlist_url: video_url,
+            playlist_type: PlaylistType::HLS,
             headers: vec![
                 format!("Referer: {}", client.origin()),
                 format!("Origin: {}", client.origin()),

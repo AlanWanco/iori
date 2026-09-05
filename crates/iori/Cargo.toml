@@ -16,7 +16,7 @@ log.workspace = true
 tracing.workspace = true
 iori-hls.workspace = true
 reqwest.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros"] }
 
 aes.workspace = true
 cbc.workspace = true

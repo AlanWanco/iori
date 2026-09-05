@@ -232,6 +232,7 @@ mod tests {
     use std::str::FromStr;
 
     #[tokio::test]
+    #[ignore = "requires a live NicoLive session"]
     async fn test_get_danmaku() -> anyhow::Result<()> {
         let data = NicoEmbeddedData::new(
             Default::default(),

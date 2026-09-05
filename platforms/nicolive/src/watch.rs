@@ -17,6 +17,7 @@ use tokio::{
 use crate::model::*;
 
 pub struct WatchClient {
+    client: Client,
     sender: Mutex<SplitSink<WebSocket, Message>>,
     receiver: Mutex<SplitStream<WebSocket>>,
 
@@ -32,13 +33,13 @@ impl WatchClient {
             .user_agent(get_chrome_rua())
             // https://github.com/jgraef/reqwest-websocket/issues/2
             .http1_only()
-            .build()
-            .unwrap();
+            .build()?;
         let response = client.get(ws_url.as_ref()).upgrade().send().await?;
         let websocket = response.into_websocket().await?;
         let (sender, receiver) = websocket.split();
 
         Ok(Self {
+            client,
             sender: Mutex::new(sender),
             receiver: Mutex::new(receiver),
 
@@ -58,13 +59,7 @@ impl WatchClient {
         let mut sender = self.sender.lock().await;
         let mut receiver = self.receiver.lock().await;
 
-        let client = Client::builder()
-            .user_agent(get_chrome_rua())
-            // https://github.com/jgraef/reqwest-websocket/issues/2
-            .http1_only()
-            .build()
-            .unwrap();
-        let response = client.get(ws_url).upgrade().send().await?;
+        let response = self.client.get(ws_url).upgrade().send().await?;
         let websocket = response.into_websocket().await?;
         let (_sender, _receiver) = websocket.split();
 
@@ -208,6 +203,7 @@ mod tests {
     use crate::{model::WatchResponse, program::NicoEmbeddedData, watch::WatchClient};
 
     #[tokio::test]
+    #[ignore = "requires a live NicoLive session"]
     async fn test_get_room() -> anyhow::Result<()> {
         let data = NicoEmbeddedData::new(
             Default::default(),

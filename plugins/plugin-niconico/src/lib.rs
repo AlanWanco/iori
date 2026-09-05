@@ -165,7 +165,12 @@ impl Inspect for NicoLiveInspector {
             loop {
                 tokio::select! {
                     msg = watcher.recv() => {
-                        if let Err(e) = msg {
+                        let result = match msg {
+                            Ok(Some(_)) => Ok(()),
+                            Ok(None) => Err(anyhow::anyhow!("watcher disconnected")),
+                            Err(e) => Err(e),
+                        };
+                        if let Err(e) = result {
                             tracing::error!("{e:?}");
                             if let Err(e) = watcher
                                 .reconnect(&wss_url, &best_quality, chase_play)

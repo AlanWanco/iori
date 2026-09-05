@@ -238,7 +238,8 @@ impl PipeMerger {
                     || buffer_segments > 0
                     || is_live_output(&output_for_initial)
                 {
-                    command.arg("-re");
+                    // The default catch-up rate is too slow for interleaved A/V MPEG-TS pipes.
+                    command.args(["-re", "-readrate_catchup", "1.25"]);
                 }
 
                 // video input: stdin
@@ -267,14 +268,12 @@ impl PipeMerger {
 
                 if let Some(dest) = extra_for_initial.and_then(|s| shlex::split(&s)) {
                     command.args(dest);
+                } else if is_live_output(&output_for_initial) {
+                    command.args(["-f", "flv"]).arg(output_for_initial);
                 } else {
-                    if is_live_output(&output_for_initial) {
-                        command.args(["-f", "flv"]).arg(output_for_initial);
-                    } else {
-                        command
-                            .args(["-f", "mpegts", "-shortest"])
-                            .arg(output_for_initial);
-                    }
+                    command
+                        .args(["-f", "mpegts", "-shortest"])
+                        .arg(output_for_initial);
                 }
 
                 let mut process = command.spawn().unwrap();
@@ -374,7 +373,7 @@ impl PipeMerger {
                                     || buffer_segments > 0
                                     || is_live_output(&output)
                                 {
-                                    command.arg("-re");
+                                    command.args(["-re", "-readrate_catchup", "1.25"]);
                                 }
                                 command.args(["-i", "pipe:0"]);
 
@@ -399,12 +398,10 @@ impl PipeMerger {
 
                                 if let Some(dest) = extra_command.and_then(|s| shlex::split(&s)) {
                                     command.args(dest);
+                                } else if is_live_output(&output) {
+                                    command.args(["-f", "flv"]).arg(output);
                                 } else {
-                                    if is_live_output(&output) {
-                                        command.args(["-f", "flv"]).arg(output);
-                                    } else {
-                                        command.args(["-f", "mpegts", "-shortest"]).arg(output);
-                                    }
+                                    command.args(["-f", "mpegts", "-shortest"]).arg(output);
                                 }
 
                                 let mut process = command.spawn().unwrap();
@@ -466,10 +463,8 @@ impl PipeMerger {
                             }
                         }
                     }
-                    if recycle {
-                        if let Err(e) = invalidate.await {
-                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
-                        }
+                    if recycle && let Err(e) = invalidate.await {
+                        tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
                     }
                 }
             });
@@ -485,19 +480,15 @@ impl PipeMerger {
                             tracing::error!("[ffmpeg] Broken audio pipe: {}", e);
                             break;
                         }
-                        if recycle {
-                            if let Err(e) = invalidate.await {
-                                tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
-                            }
+                        if recycle && let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
                         }
                     }
                 } else {
                     // Just drain and discard if there's no audio pipe but we still got audio segments
                     while let Some((_, _, invalidate)) = audio_receiver.recv().await {
-                        if recycle {
-                            if let Err(e) = invalidate.await {
-                                tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
-                            }
+                        if recycle && let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
                         }
                     }
                 }

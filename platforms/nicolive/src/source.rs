@@ -38,14 +38,30 @@ impl NicoTimeshiftSource {
         http.add_cookies(stream.cookies.into_cookies(), url);
 
         // keep seats
+        let reconnect_url = wss_url.clone();
+        let reconnect_quality = quality.to_string();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     msg = watcher.recv() => {
-                        let Ok(msg) = msg else {
-                            break;
+                        let result = match msg {
+                            Ok(Some(msg)) => {
+                                log::debug!("message: {:?}", msg);
+                                Ok(())
+                            }
+                            Ok(None) => Err(anyhow::anyhow!("watcher disconnected")),
+                            Err(e) => Err(e),
                         };
-                        log::debug!("message: {:?}", msg);
+                        if let Err(e) = result {
+                            log::warn!("Niconico watcher disconnected: {e:?}");
+                            if let Err(e) = watcher
+                                .reconnect(&reconnect_url, &reconnect_quality, chase_play)
+                                .await
+                            {
+                                log::warn!("Failed to reconnect Niconico watcher: {e:?}");
+                                break;
+                            }
+                        }
                     }
                     _ = watcher.keep_seat() => (),
                 }

@@ -119,13 +119,22 @@ impl Inspect for EplusInspector {
             );
         }
 
-        // Export all cookies relevant for:
-        // 1. The event page (session cookies for refresh)
-        // 2. The CDN domain (CloudFront cookies for segment fetches)
-        let mut cookies = context.http.export_cookies_for_url(&playlist_url);
+        // Keep the original CloudFront Set-Cookie attributes. In particular, the
+        // Path is bound to /out/v1/<playlist-id>; flattening these cookies to
+        // name=value here would create a stale host-only duplicate on download.
+        // Also include session cookies needed for the event-page refresh task.
+        let mut cookies = event_data.cloudfront_cookies.clone();
+        let playlist_cookies = context.http.export_cookies_for_url(&playlist_url);
         let event_cookies = context.http.export_cookies_for_url(url);
-        for cookie in event_cookies {
-            if !cookies.contains(&cookie) {
+        for cookie in playlist_cookies.into_iter().chain(event_cookies) {
+            let already_present = cookie.split_once('=').is_some_and(|(name, _)| {
+                cookies.iter().any(|existing| {
+                    existing
+                        .split_once('=')
+                        .is_some_and(|(existing_name, _)| existing_name.trim() == name.trim())
+                })
+            });
+            if !already_present {
                 cookies.push(cookie);
             }
         }

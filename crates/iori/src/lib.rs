@@ -78,6 +78,16 @@ pub trait StreamingSegment {
         0
     }
 
+    /// Optional key used to keep related audio and video segments together.
+    ///
+    /// Segments with the same key are downloaded as one unit when a downloader
+    /// can provide synchronized output. Keys are matched exactly; a downloader
+    /// must not infer synchronization for different keys. HLS uses
+    /// discontinuity and media sequence numbers for this key.
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        None
+    }
+
     /// File name of the segment
     fn file_name(&self) -> &str;
 
