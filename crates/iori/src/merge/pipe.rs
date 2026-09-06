@@ -29,6 +29,37 @@ fn is_live_output(output: &Path) -> bool {
     output.starts_with("rtmp://") || output.starts_with("rtmps://")
 }
 
+fn readrate_args(use_readrate_catchup: bool) -> &'static [&'static str] {
+    if use_readrate_catchup {
+        &["-re", "-readrate_catchup", "1.25"]
+    } else {
+        &["-re"]
+    }
+}
+
+async fn ffmpeg_supports_readrate_catchup() -> bool {
+    let Ok(output) = Command::new("ffmpeg")
+        .args(["-hide_banner", "-h", "full"])
+        .output()
+        .await
+    else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    output
+        .stdout
+        .into_iter()
+        .chain(output.stderr)
+        .collect::<Vec<_>>()
+        .split(|byte| *byte == b'\n')
+        .map(|line| String::from_utf8_lossy(line).trim().to_string())
+        .any(|line| line.split_whitespace().next() == Some("-readrate_catchup"))
+}
+
 struct SegmentBuffer<T> {
     items: VecDeque<(u64, T)>,
     target: usize,
@@ -203,6 +234,7 @@ impl PipeMerger {
         };
 
         let future = tokio::spawn(async move {
+            let use_readrate_catchup = ffmpeg_supports_readrate_catchup().await;
             let output_for_initial = output.clone();
             let extra_for_initial = extra_command.clone();
             #[cfg(target_os = "windows")]
@@ -239,7 +271,8 @@ impl PipeMerger {
                     || is_live_output(&output_for_initial)
                 {
                     // The default catch-up rate is too slow for interleaved A/V MPEG-TS pipes.
-                    command.args(["-re", "-readrate_catchup", "1.25"]);
+                    // Older system FFmpeg versions do not have -readrate_catchup.
+                    command.args(readrate_args(use_readrate_catchup));
                 }
 
                 // video input: stdin
@@ -373,7 +406,7 @@ impl PipeMerger {
                                     || buffer_segments > 0
                                     || is_live_output(&output)
                                 {
-                                    command.args(["-re", "-readrate_catchup", "1.25"]);
+                                    command.args(readrate_args(use_readrate_catchup));
                                 }
                                 command.args(["-i", "pipe:0"]);
 
@@ -602,9 +635,15 @@ impl Merger for PipeMerger {
 
 #[cfg(test)]
 mod tests {
-    use super::SegmentBuffer;
+    use super::{SegmentBuffer, readrate_args};
     use crate::util::ordered_stream::OrderedStream;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn readrate_args_are_compatible_with_older_ffmpeg() {
+        assert_eq!(readrate_args(false), &["-re"]);
+        assert_eq!(readrate_args(true), &["-re", "-readrate_catchup", "1.25"]);
+    }
 
     #[tokio::test]
     async fn segment_buffer_drains_primed_items_during_input_pause() {
