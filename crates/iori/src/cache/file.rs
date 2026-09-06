@@ -70,7 +70,11 @@ impl CacheSource for FileCacheSource {
     }
 
     async fn clear(&self) -> IoriResult<()> {
-        let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
+        let mut entries = match tokio::fs::read_dir(&self.cache_dir).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
         while let Some(entry) = entries.next_entry().await? {
             if entry.file_type().await?.is_dir() {
                 tracing::warn!(
@@ -82,8 +86,11 @@ impl CacheSource for FileCacheSource {
             }
         }
 
-        tokio::fs::remove_dir_all(&self.cache_dir).await?;
-        Ok(())
+        match tokio::fs::remove_dir_all(&self.cache_dir).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     fn location_hint(&self) -> Option<String> {

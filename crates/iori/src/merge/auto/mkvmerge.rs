@@ -77,7 +77,13 @@ impl AutoMergerConcat for MkvmergeMerger {
             });
         }
 
-        child.wait().await?;
+        let status = child.wait().await?;
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "mkvmerge concatenation failed with status {status}"
+            ))
+            .into());
+        }
 
         Ok(())
     }
@@ -127,11 +133,25 @@ impl AutoMergerMerge for MkvmergeMerger {
             });
         }
 
-        merge.wait().await?;
+        let status = merge.wait().await?;
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "mkvmerge stream merge failed with status {status}"
+            ))
+            .into());
+        }
 
-        // remove temporary files
+        // Remove temporary files. mkvmerge or an interrupted cleanup may have
+        // removed one already; that should not turn a successful output into a
+        // failed command.
         for track in tracks {
-            tokio::fs::remove_file(track).await?;
+            match tokio::fs::remove_file(&track).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::debug!("Temporary merge track already removed: {}", track.display());
+                }
+                Err(error) => return Err(error.into()),
+            }
         }
 
         Ok(())
