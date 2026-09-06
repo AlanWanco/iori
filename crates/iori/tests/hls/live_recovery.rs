@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use iori::{InitialSegment, StreamingSource, context::IoriContext, hls::HlsLiveSource};
+use reqwest::Client;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -324,5 +325,110 @@ async fn live_source_requests_initial_segment_byte_range() -> anyhow::Result<()>
         batch[0].initial_segment,
         InitialSegment::Clear(std::sync::Arc::new(initial_segment.to_vec()))
     );
+    Ok(())
+}
+
+struct KeyTimeoutResponder {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Respond for KeyTimeoutResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let response = ResponseTemplate::new(200).set_body_bytes(vec![0; 16]);
+        if call == 0 {
+            response.set_delay(Duration::from_millis(100))
+        } else {
+            response
+        }
+    }
+}
+
+struct EncryptedPlaylistResponder {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Respond for EncryptedPlaylistResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        let media_sequence = self.calls.fetch_add(1, Ordering::SeqCst) as u64;
+        ResponseTemplate::new(200).set_body_string(format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:{media_sequence}\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x00000000000000000000000000000000\n#EXTINF:1.0,\nsegment{media_sequence}.ts\n"
+        ))
+    }
+}
+
+#[tokio::test]
+async fn live_source_recovers_after_encryption_key_timeout() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+    let key_calls = Arc::new(AtomicUsize::new(0));
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x00000000000000000000000000000000\n#EXTINF:1.0,\nsegment0.ts\n",
+        ))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/key.bin"))
+        .respond_with(KeyTimeoutResponder {
+            calls: key_calls.clone(),
+        })
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext {
+        client: Client::builder()
+            .timeout(Duration::from_millis(20))
+            .build()?,
+        segment_retries: 1,
+        ..IoriContext::default()
+    };
+    let mut stream = source.segments_stream(&context).await?;
+
+    let batch = timeout(Duration::from_secs(5), stream.next())
+        .await?
+        .expect("live source should recover after a key timeout")?;
+    assert_eq!(batch.len(), 1);
+    assert_eq!(key_calls.load(Ordering::SeqCst), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_reuses_an_unchanged_encryption_key() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+    let playlist_calls = Arc::new(AtomicUsize::new(0));
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(EncryptedPlaylistResponder {
+            calls: playlist_calls.clone(),
+        })
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/key.bin"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; 16]))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?;
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let first_batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("first encrypted batch should arrive")?;
+    assert_eq!(first_batch[0].media_sequence, 0);
+
+    let second_batch = timeout(Duration::from_secs(3), stream.next())
+        .await?
+        .expect("second encrypted batch should arrive")?;
+    assert_eq!(second_batch[0].media_sequence, 1);
+    assert_eq!(playlist_calls.load(Ordering::SeqCst), 2);
+
     Ok(())
 }

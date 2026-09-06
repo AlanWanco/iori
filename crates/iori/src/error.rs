@@ -39,7 +39,8 @@ pub enum IoriError {
     #[error(transparent)]
     HexDecodeError(#[from] hex::FromHexError),
 
-    #[error(transparent)]
+    // Keep request URLs out of logs because HLS URLs may contain signed credentials.
+    #[error("network request failed")]
     RequestError(Box<reqwest::Error>),
 
     // MPEG-DASH errors
@@ -103,6 +104,26 @@ impl From<dash_mpd::DashMpdError> for IoriError {
 impl From<reqwest::Error> for IoriError {
     fn from(err: reqwest::Error) -> Self {
         IoriError::RequestError(Box::new(err))
+    }
+}
+
+impl IoriError {
+    pub fn is_transient_network_error(&self) -> bool {
+        match self {
+            Self::RequestError(error) => {
+                error.is_timeout() || error.is_connect() || error.is_body() || error.is_decode()
+            }
+            Self::HttpError(status) => status.is_server_error(),
+            Self::IOError(error) => matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::TimedOut
+                    | std::io::ErrorKind::UnexpectedEof
+            ),
+            _ => false,
+        }
     }
 }
 

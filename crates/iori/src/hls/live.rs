@@ -112,6 +112,26 @@ impl StreamingSource for HlsLiveSource {
                         tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
                         continue;
                     }
+                    Err(e) if e.is_transient_network_error() => {
+                        consecutive_manifest_failures =
+                            consecutive_manifest_failures.saturating_add(1);
+                        tracing::warn!(
+                            "Failed to process live playlist segments due to a transient network error; waiting {} seconds before retrying (consecutive failures: {}). {e}",
+                            MANIFEST_RECOVERY_DELAY.as_secs(),
+                            consecutive_manifest_failures
+                        );
+                        if let Some(timeout) = idle_timeout
+                            && last_new_segment_at.elapsed() >= timeout
+                        {
+                            tracing::warn!(
+                                "No new HLS segments received for {} seconds while recovering from transient network errors; stopping live playlist polling.",
+                                timeout.as_secs()
+                            );
+                            break;
+                        }
+                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                        continue;
+                    }
                     Err(e) => {
                         tracing::error!("Failed to process live playlist segments: {e}");
                         if sender.send(Err(e)).is_err() {

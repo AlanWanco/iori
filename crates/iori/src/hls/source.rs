@@ -15,9 +15,12 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use super::utils::load_playlist_with_retry;
+
+const KEY_RECOVERY_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SegmentIdentity {
@@ -25,6 +28,18 @@ struct SegmentIdentity {
     byte_range: Option<(u64, Option<u64>)>,
     media_sequence: u64,
     part_index: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HlsKeyIdentity {
+    method: String,
+    uri: Option<Url>,
+    iv: Option<String>,
+    keyformat: String,
+    keyformatversions: Option<String>,
+    /// AES keys without an explicit IV derive it from the media sequence.
+    media_sequence: Option<u64>,
+    manual_key: Option<String>,
 }
 
 /// Core part to perform network operations
@@ -45,6 +60,7 @@ pub struct HlsMediaPlaylistSource {
 
     initial_playlist: Option<MediaPlaylist>,
     previous_playlist_segments: HashSet<SegmentIdentity>,
+    cached_key: Option<(HlsKeyIdentity, Option<Arc<IoriKey>>)>,
 }
 
 /// A source to fetch segments from a Media Playlist
@@ -74,6 +90,7 @@ impl HlsMediaPlaylistSource {
             stream_type,
             stream_id,
             previous_playlist_segments: HashSet::new(),
+            cached_key: None,
         }
     }
 
@@ -98,6 +115,61 @@ impl HlsMediaPlaylistSource {
             media_sequence,
             part_index: segment.part_index,
         })
+    }
+
+    fn key_identity(
+        key: &iori_hls::Key,
+        playlist_url: &Url,
+        media_sequence: u64,
+        manual_key: Option<&str>,
+    ) -> IoriResult<HlsKeyIdentity> {
+        Ok(HlsKeyIdentity {
+            method: format!("{:?}", key.method),
+            uri: key
+                .uri
+                .as_deref()
+                .map(|uri| playlist_url.join(uri))
+                .transpose()?,
+            iv: key.iv.clone(),
+            keyformat: format!("{:?}", key.key_format),
+            keyformatversions: key.key_format_versions.clone(),
+            media_sequence: key.iv.is_none().then_some(media_sequence),
+            manual_key: manual_key.map(str::to_string),
+        })
+    }
+
+    async fn load_key_with_retry(
+        client: &Client,
+        key: &iori_hls::Key,
+        playlist_url: &Url,
+        media_sequence: u64,
+        manual_key: Option<String>,
+        retries: u32,
+    ) -> IoriResult<Option<Arc<IoriKey>>> {
+        let attempts = retries.max(1);
+        for attempt in 1..=attempts {
+            match IoriKey::from_key(
+                client,
+                key,
+                playlist_url,
+                media_sequence,
+                manual_key.clone(),
+            )
+            .await
+            {
+                Ok(key) => return Ok(key.map(Arc::new)),
+                Err(error) if attempt < attempts && error.is_transient_network_error() => {
+                    tracing::warn!(
+                        "Failed to load HLS encryption key; retrying in {} ms (attempt {attempt}/{attempts}): {error}",
+                        KEY_RECOVERY_DELAY.as_millis()
+                    );
+                    tokio::time::sleep(KEY_RECOVERY_DELAY).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        unreachable!("HLS key retry loop must return from an attempt")
     }
 
     pub async fn load_segments(
@@ -164,15 +236,32 @@ impl HlsMediaPlaylistSource {
         let mut segments = Vec::with_capacity(playlist.segments.len());
         for (i, segment) in playlist.segments.iter().enumerate() {
             if let Some(k) = &segment.key {
-                key = IoriKey::from_key(
-                    &context.client,
-                    k,
-                    &playlist_url,
-                    playlist.media_sequence,
-                    self.key.clone(),
-                )
-                .await?
-                .map(Arc::new);
+                let manual_key = self.key.as_deref();
+                let key_identity =
+                    Self::key_identity(k, &playlist_url, playlist.media_sequence, manual_key)?;
+                let cache_hit = self
+                    .cached_key
+                    .as_ref()
+                    .is_some_and(|(identity, _)| identity == &key_identity);
+
+                if cache_hit {
+                    key = self
+                        .cached_key
+                        .as_ref()
+                        .and_then(|(_, value)| value.clone());
+                } else {
+                    let loaded_key = Self::load_key_with_retry(
+                        &context.client,
+                        k,
+                        &playlist_url,
+                        playlist.media_sequence,
+                        self.key.clone(),
+                        context.segment_retries,
+                    )
+                    .await?;
+                    self.cached_key = Some((key_identity, loaded_key.clone()));
+                    key = loaded_key;
+                }
             }
 
             if let Some(m) = &segment.map {
