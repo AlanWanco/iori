@@ -1,5 +1,10 @@
 name: Release
 
+env:
+  # crates/iori-ffmpeg/build/*.rs expects an FFmpeg git branch/tag,
+  # not the Rust target triple passed by the build matrix.
+  FFMPEG_BRANCH: release/7.1
+
 permissions:
   contents: write
 
@@ -98,7 +103,7 @@ jobs:
       - name: Build | FFmpeg
         run: |
           pushd crates/iori-ffmpeg
-          ./build/build.rs ${{ matrix.target }}
+          ./build/build.rs "$FFMPEG_BRANCH"
           popd
 
       - name: Deploy | Upload artifacts
