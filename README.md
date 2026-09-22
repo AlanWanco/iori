@@ -15,7 +15,7 @@ You can get the pre-compiled executable files from `artifacts`. (Like [this](htt
 
 ## Quickstart
 
-# 导入推流地址
+### 导入推流地址
 ```
 #微博推流
 export WEIBO_RTMP="rtmp://pswb.live.weibo.com/alicdn/"
@@ -34,7 +34,7 @@ export BILI_RTMP_KEY="?streamname=live_&key=&schedule=rtmp&pflag=2"
 echo "$BILI_RTMP"
 echo "$BILI_RTMP_KEY"
 ```
-# eplus推流
+### eplus推流
 ```
 # 日区限定
 export EPLUS_USER="youremail@gmail.com" 
@@ -54,7 +54,7 @@ shiori-dev download "${EPLUS_URL}" \
 --output "${WEIBO_RTMP}${WEIBO_RTMP_ID}${WEIBO_RTMP_KEY}" \
 --no-tui --no-recycle --no-live-idle-timeout --wait
 ```
-# nico转播
+### nico转播
 ```
 export NICO_LIVE="https://live.nicovideo.jp/watch/lv34567890"
 export NICO_SESSION=""
@@ -67,7 +67,7 @@ shiori-dev download "$NICO_LIVE" \
 --no-tui --nico-user-session "$NICO_SESSION" \
 -M -o "${BILI_RTMP}${BILI_RTMP_KEY}" --initial-segments 3 --no-recycle
 ```
-# Sheeta
+### Sheeta
 ```
 export RTMP_URL=""
 export SHEETA_URL=""
@@ -79,7 +79,7 @@ export SHEETA_URL=""
 # 保留所有分片+只加载最新三条地址
 shiori-dev download "${SHEETA_URL}" -M --output "${RTMP_URL}" --no-tui --wait --initial-segments 3 --no-recycle
 ```
-# m3u8普适性转播
+### m3u8普适性转播
 ```
 export SOURCE_M3U8=""
 export SOURCE_HLS_KEY="" # 可选
