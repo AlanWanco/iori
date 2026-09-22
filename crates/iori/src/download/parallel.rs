@@ -155,100 +155,104 @@ where
     pub async fn download(mut self) -> IoriResult<M::Result> {
         self.app.on_start().await?;
 
-        let stream = self.source.segments_stream(&self.context).await?;
-        tokio::pin!(stream);
+        {
+            let stream = self.source.segments_stream(&self.context).await?;
+            tokio::pin!(stream);
 
-        loop {
-            let segments = tokio::select! {
-                segments = stream.next() => segments,
-                _ = &mut self.stop_signal => {
-                    tracing::info!("Stop signal received, finishing downloaded segments.");
+            loop {
+                let segments = tokio::select! {
+                    segments = stream.next() => segments,
+                    _ = &mut self.stop_signal => {
+                        tracing::info!("Stop signal received, finishing downloaded segments.");
+                        break;
+                    }
+                };
+
+                let Some(segments) = segments else {
                     break;
+                };
+
+                // If the playlist is not available, the downloader will be stopped.
+                if let Err(e) = segments {
+                    tracing::error!("Failed to fetch segment list: {e}");
+                    return Err(e);
                 }
-            };
+                let segments = segments?;
 
-            let Some(segments) = segments else {
-                break;
-            };
+                self.app
+                    .on_receive_segments(
+                        &segments.iter().map(SegmentInfo::from).collect::<Vec<_>>(),
+                    )
+                    .await;
 
-            // If the playlist is not available, the downloader will be stopped.
-            if let Err(e) = segments {
-                tracing::error!("Failed to fetch segment list: {e}");
-                return Err(e);
-            }
-            let segments = segments?;
-
-            self.app
-                .on_receive_segments(&segments.iter().map(SegmentInfo::from).collect::<Vec<_>>())
-                .await;
-
-            let mut synchronized_groups: Vec<Vec<S::Segment>> = Vec::new();
-            let mut group_indexes: HashMap<(u64, u64), usize> = HashMap::new();
-            for segment in segments {
-                if let Some(key) = segment.synchronization_key() {
-                    if let Some(&index) = group_indexes.get(&key) {
-                        synchronized_groups[index].push(segment);
+                let mut synchronized_groups: Vec<Vec<S::Segment>> = Vec::new();
+                let mut group_indexes: HashMap<(u64, u64), usize> = HashMap::new();
+                for segment in segments {
+                    if let Some(key) = segment.synchronization_key() {
+                        if let Some(&index) = group_indexes.get(&key) {
+                            synchronized_groups[index].push(segment);
+                        } else {
+                            let index = synchronized_groups.len();
+                            group_indexes.insert(key, index);
+                            synchronized_groups.push(vec![segment]);
+                        }
                     } else {
-                        let index = synchronized_groups.len();
-                        group_indexes.insert(key, index);
                         synchronized_groups.push(vec![segment]);
                     }
-                } else {
-                    synchronized_groups.push(vec![segment]);
                 }
-            }
 
-            for group in synchronized_groups {
-                let synchronized = group.len() > 1
-                    && group
-                        .iter()
-                        .any(|segment| segment.stream_type() == crate::StreamType::Audio)
-                    && group
-                        .iter()
-                        .any(|segment| segment.stream_type() == crate::StreamType::Video);
+                for group in synchronized_groups {
+                    let synchronized = group.len() > 1
+                        && group
+                            .iter()
+                            .any(|segment| segment.stream_type() == crate::StreamType::Audio)
+                        && group
+                            .iter()
+                            .any(|segment| segment.stream_type() == crate::StreamType::Video);
 
-                let context = self.context.clone();
-                let app = self.app.clone();
-                let merger = self.merger.clone();
-                let cache = self.cache.clone();
-                let retries = self.retries;
-                let permit = self.permits.clone().acquire_owned().await.unwrap();
-                tokio::spawn(async move {
-                    let mut outcomes = Vec::with_capacity(group.len());
-                    for segment in group {
-                        outcomes.push(
-                            download_segment(segment, context.clone(), cache.clone(), retries)
-                                .await,
-                        );
-                    }
-                    let group_failed = synchronized && outcomes.iter().any(|o| !o.succeeded);
+                    let context = self.context.clone();
+                    let app = self.app.clone();
+                    let merger = self.merger.clone();
+                    let cache = self.cache.clone();
+                    let retries = self.retries;
+                    let permit = self.permits.clone().acquire_owned().await.unwrap();
+                    tokio::spawn(async move {
+                        let mut outcomes = Vec::with_capacity(group.len());
+                        for segment in group {
+                            outcomes.push(
+                                download_segment(segment, context.clone(), cache.clone(), retries)
+                                    .await,
+                            );
+                        }
+                        let group_failed = synchronized && outcomes.iter().any(|o| !o.succeeded);
 
-                    for outcome in outcomes {
-                        let filename = outcome.segment.file_name.clone();
-                        if group_failed || !outcome.succeeded {
-                            app.on_failed_segment(&outcome.segment).await;
-                            if let Err(e) = merger
-                                .lock()
-                                .await
-                                .fail(outcome.segment, cache.clone())
-                                .await
-                            {
-                                tracing::error!("Failed to mark {filename} as failed: {e}");
-                            }
-                        } else {
-                            app.on_downloaded_segment(&outcome.segment).await;
-                            if let Err(e) = merger
-                                .lock()
-                                .await
-                                .update(outcome.segment, cache.clone())
-                                .await
-                            {
-                                tracing::error!("Failed to mark {filename} as downloaded: {e}");
+                        for outcome in outcomes {
+                            let filename = outcome.segment.file_name.clone();
+                            if group_failed || !outcome.succeeded {
+                                app.on_failed_segment(&outcome.segment).await;
+                                if let Err(e) = merger
+                                    .lock()
+                                    .await
+                                    .fail(outcome.segment, cache.clone())
+                                    .await
+                                {
+                                    tracing::error!("Failed to mark {filename} as failed: {e}");
+                                }
+                            } else {
+                                app.on_downloaded_segment(&outcome.segment).await;
+                                if let Err(e) = merger
+                                    .lock()
+                                    .await
+                                    .update(outcome.segment, cache.clone())
+                                    .await
+                                {
+                                    tracing::error!("Failed to mark {filename} as downloaded: {e}");
+                                }
                             }
                         }
-                    }
-                    drop(permit);
-                });
+                        drop(permit);
+                    });
+                }
             }
         }
 

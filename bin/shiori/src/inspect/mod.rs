@@ -36,7 +36,7 @@ impl PluginManager {
     }
 
     pub fn wait(mut self, value: bool) -> Self {
-        self.wait = if value { Some(5) } else { None };
+        self.wait = if value { Some(10) } else { None };
         self
     }
 
