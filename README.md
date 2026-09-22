@@ -15,6 +15,18 @@ You can get the pre-compiled executable files from `artifacts`. (Like [this](htt
 
 ## Quickstart
 
+### 推流用部分命令
+```
+# 只加载最新三条地址，针对一些只提供vod的转播很有效
+--initial-segments 3
+
+# 保留所有已下载的分片
+--no-recycle
+
+# 等待开播
+--wait
+```
+
 ### 导入推流地址
 ```
 #微博推流
@@ -52,7 +64,7 @@ shiori-dev download "${EPLUS_URL}" \
 --eplus-password "${EPLUS_PWD}" \
 --pipe-mux --initial-segments 3 \
 --output "${WEIBO_RTMP}${WEIBO_RTMP_ID}${WEIBO_RTMP_KEY}" \
---no-tui --no-recycle --no-live-idle-timeout --wait
+--no-tui --no-recycle --wait
 ```
 ### nico转播
 ```
@@ -92,7 +104,6 @@ shiori-dev download "${SOURCE_M3U8}" \
 --output "${WEIBO_RTMP}${WEIBO_RTMP_ID}${WEIBO_RTMP_KEY}" \
 --no-tui --no-recycle
 ```
-
 
 ## Road to 1.0
 
