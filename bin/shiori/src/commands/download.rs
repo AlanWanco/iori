@@ -208,6 +208,21 @@ where
                             .with_idle_timeout(live_idle_timeout);
                         downloader.download(source).await?;
                     }
+                } else if self.wait
+                    && let Some(original_url) = self.extra.original_url.as_deref()
+                    && shiori_plugin_sheeta::is_sheeta_url(original_url)
+                {
+                    let source = shiori_plugin_sheeta::SheetaSource::new(
+                        http.clone(),
+                        self.url.clone(),
+                        original_url.to_string(),
+                        self.decrypt.key.as_deref(),
+                        true,
+                    )
+                    .await?
+                    .with_initial_segment_limit(self.download.initial_segments)
+                    .with_idle_timeout(live_idle_timeout);
+                    downloader.download(source).await?;
                 } else {
                     let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
                         .with_initial_segment_limit(self.download.initial_segments)

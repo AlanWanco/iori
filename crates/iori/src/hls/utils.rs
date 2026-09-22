@@ -6,9 +6,11 @@ use std::time::Duration;
 
 const ACCESS_DENIED_RETRY_DELAY: Duration = Duration::from_secs(1);
 
-fn is_access_denied_playlist_response(body: &[u8]) -> bool {
-    body.windows(b"AccessDenied".len())
-        .any(|window| window == b"AccessDenied")
+fn is_access_denied_playlist_response(status: reqwest::StatusCode, body: &[u8]) -> bool {
+    status == reqwest::StatusCode::FORBIDDEN
+        || body
+            .windows(b"AccessDenied".len())
+            .any(|window| window == b"AccessDenied")
 }
 
 pub async fn load_playlist_with_retry(
@@ -23,12 +25,12 @@ pub async fn load_playlist_with_retry(
         }
 
         match client.get(url.clone()).send().await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
-                    Ok(parsed) => break parsed,
-                    Err(error) => {
-                        tracing::warn!("Failed to parse M3U8 file: {error}");
-                        if is_access_denied_playlist_response(&m3u8_bytes) {
+            Ok(resp) => {
+                let status = resp.status();
+                match resp.bytes().await {
+                    Ok(m3u8_bytes) if !status.is_success() => {
+                        tracing::warn!("Failed to fetch M3U8 file: HTTP status {status}");
+                        if is_access_denied_playlist_response(status, &m3u8_bytes) {
                             tracing::warn!(
                                 "Playlist returned AccessDenied; waiting {} ms before retrying.",
                                 ACCESS_DENIED_RETRY_DELAY.as_millis()
@@ -37,12 +39,26 @@ pub async fn load_playlist_with_retry(
                         }
                         retry -= 1;
                     }
-                },
-                Err(error) => {
-                    tracing::warn!("Failed to fetch M3U8 file: {error}");
-                    retry -= 1;
+                    Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
+                        Ok(parsed) => break parsed,
+                        Err(error) => {
+                            tracing::warn!("Failed to parse M3U8 file: {error}");
+                            if is_access_denied_playlist_response(status, &m3u8_bytes) {
+                                tracing::warn!(
+                                    "Playlist returned AccessDenied; waiting {} ms before retrying.",
+                                    ACCESS_DENIED_RETRY_DELAY.as_millis()
+                                );
+                                tokio::time::sleep(ACCESS_DENIED_RETRY_DELAY).await;
+                            }
+                            retry -= 1;
+                        }
+                    },
+                    Err(error) => {
+                        tracing::warn!("Failed to fetch M3U8 file: {error}");
+                        retry -= 1;
+                    }
                 }
-            },
+            }
             Err(error) => {
                 tracing::warn!("Failed to fetch M3U8 file: {error}");
                 retry -= 1;
@@ -68,12 +84,12 @@ pub async fn load_m3u8(
         }
 
         match client.get(url.clone()).send().await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
-                    Ok(parsed) => break parsed,
-                    Err(error) => {
-                        tracing::warn!("Failed to parse M3U8 file: {error}");
-                        if is_access_denied_playlist_response(&m3u8_bytes) {
+            Ok(resp) => {
+                let status = resp.status();
+                match resp.bytes().await {
+                    Ok(m3u8_bytes) if !status.is_success() => {
+                        tracing::warn!("Failed to fetch M3U8 file: HTTP status {status}");
+                        if is_access_denied_playlist_response(status, &m3u8_bytes) {
                             tracing::warn!(
                                 "Playlist returned AccessDenied; waiting {} ms before retrying.",
                                 ACCESS_DENIED_RETRY_DELAY.as_millis()
@@ -82,12 +98,26 @@ pub async fn load_m3u8(
                         }
                         retry -= 1;
                     }
-                },
-                Err(error) => {
-                    tracing::warn!("Failed to fetch M3U8 file: {error}");
-                    retry -= 1;
+                    Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
+                        Ok(parsed) => break parsed,
+                        Err(error) => {
+                            tracing::warn!("Failed to parse M3U8 file: {error}");
+                            if is_access_denied_playlist_response(status, &m3u8_bytes) {
+                                tracing::warn!(
+                                    "Playlist returned AccessDenied; waiting {} ms before retrying.",
+                                    ACCESS_DENIED_RETRY_DELAY.as_millis()
+                                );
+                                tokio::time::sleep(ACCESS_DENIED_RETRY_DELAY).await;
+                            }
+                            retry -= 1;
+                        }
+                    },
+                    Err(error) => {
+                        tracing::warn!("Failed to fetch M3U8 file: {error}");
+                        retry -= 1;
+                    }
                 }
-            },
+            }
             Err(error) => {
                 tracing::warn!("Failed to fetch M3U8 file: {error}");
                 retry -= 1;

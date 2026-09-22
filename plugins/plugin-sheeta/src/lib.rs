@@ -1,3 +1,7 @@
+mod source;
+
+pub use source::{SheetaSource, is_sheeta_url};
+
 use anyhow::Context;
 use iori_sheeta::client::SheetaClient;
 use shiori_plugin::*;

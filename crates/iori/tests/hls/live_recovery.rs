@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use iori::{InitialSegment, StreamingSource, context::IoriContext, hls::HlsLiveSource};
-use reqwest::Client;
+use reqwest::{Client, Url};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -264,6 +264,49 @@ async fn live_source_switches_playlist_url_without_resetting_sequence() -> anyho
         .expect("rotated playlist should arrive")?;
     assert_eq!(second_batch[0].media_sequence, 1);
     assert_eq!(second_batch[0].sequence, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_source_recovers_with_manifest_url_callback() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+    let initial_url = format!("{}/playlist.m3u8", mock_server.uri());
+    let recovered_url = format!("{}/recovered.m3u8", mock_server.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(0, 1)))
+        .up_to_n_times(1)
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&mock_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/recovered.m3u8"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(media_playlist(1, 1)))
+        .mount(&mock_server)
+        .await;
+
+    let source = HlsLiveSource::new(initial_url, None)?.with_manifest_recovery(move || {
+        let recovered_url = recovered_url.clone();
+        async move { Url::parse(&recovered_url).ok() }
+    });
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let first_batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("first batch should arrive")?;
+    assert_eq!(first_batch[0].media_sequence, 0);
+
+    let second_batch = timeout(Duration::from_secs(10), stream.next())
+        .await?
+        .expect("recovered playlist should arrive")?;
+    assert_eq!(second_batch[0].media_sequence, 1);
 
     Ok(())
 }
