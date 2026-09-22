@@ -117,6 +117,7 @@ impl PluginManager {
         inspectors.reverse();
 
         // As `InspectBranch::Redirect` exists, we need a loop
+        let mut retry_count = 0u64;
         let result = 'outer: loop {
             for item in inspectors.iter() {
                 // If a regex matches, we try to inspect it
@@ -145,6 +146,11 @@ impl PluginManager {
                         }
                         InspectBranch::NotFound => {
                             if let Some(wait_time) = self.wait {
+                                retry_count += 1;
+                                log::info!(
+                                    "Inspector `{}` found no playable source; retrying in {wait_time} seconds (attempt {retry_count}).",
+                                    item.inspector.name()
+                                );
                                 sleep(Duration::from_secs(wait_time)).await;
                                 continue 'outer;
                             } else {

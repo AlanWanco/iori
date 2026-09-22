@@ -4,7 +4,7 @@ use crate::model::{
 use fake_user_agent::get_chrome_rua;
 use reqwest::{
     Client,
-    header::{HeaderValue, ORIGIN, USER_AGENT},
+    header::{HeaderValue, ORIGIN, REFERER, USER_AGENT},
 };
 use serde_json::json;
 
@@ -131,9 +131,35 @@ impl SheetaClient {
         format!("https://hls-auth.cloud.stream.co.jp/auth/index.m3u8?session_id={session_id}")
     }
 
+    /// Probe whether a newly-created session already exposes an HLS playlist.
+    ///
+    /// The session endpoint can succeed before the HLS object is published. In
+    /// that window the CDN returns an XML `NoSuchKey` response, which must be
+    /// treated as "not ready" so callers can retry the whole session flow.
+    pub async fn probe_video_url(&self, video_url: &str) -> anyhow::Result<bool> {
+        let response = self
+            .client
+            .get(video_url)
+            .header(USER_AGENT, get_chrome_rua())
+            .header(ORIGIN, HeaderValue::from_str(self.origin())?)
+            .header(REFERER, HeaderValue::from_str(self.origin())?)
+            .send()
+            .await?;
+        let status = response.status();
+        let body = response.bytes().await?;
+
+        Ok(status.is_success() && is_hls_playlist(&body))
+    }
+
     pub fn origin(&self) -> &str {
         &self.origin
     }
+}
+
+fn is_hls_playlist(body: &[u8]) -> bool {
+    String::from_utf8_lossy(body)
+        .lines()
+        .any(|line| line.trim().trim_start_matches('\u{feff}').trim() == "#EXTM3U")
 }
 
 #[cfg(test)]
@@ -201,5 +227,14 @@ mod tests {
             video_url,
             "https://hls-auth.cloud.stream.co.jp/auth/index.m3u8?session_id=39447efb-e081-4b16-8984-7ee8da96bfe0"
         );
+    }
+
+    #[test]
+    fn test_is_hls_playlist() {
+        assert!(is_hls_playlist(b"#EXTM3U\n#EXT-X-VERSION:3\n"));
+        assert!(is_hls_playlist(b"\xef\xbb\xbf#EXTM3U\n"));
+        assert!(!is_hls_playlist(
+            br#"<?xml version=\"1.0\"?><Error><Code>NoSuchKey</Code></Error>"#
+        ));
     }
 }
