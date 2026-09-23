@@ -4,7 +4,7 @@ use crate::model::{
 use fake_user_agent::get_chrome_rua;
 use reqwest::{
     Client,
-    header::{HeaderValue, ORIGIN, USER_AGENT},
+    header::{HeaderValue, ORIGIN, REFERER, USER_AGENT},
 };
 use serde_json::json;
 
@@ -125,24 +125,58 @@ impl SheetaClient {
         format!("https://hls-auth.cloud.stream.co.jp/auth/index.m3u8?session_id={session_id}")
     }
 
+    /// Probe whether a newly-created session already exposes an HLS playlist.
+    ///
+    /// The session endpoint can succeed before the HLS object is published. In
+    /// that window the CDN returns an XML `NoSuchKey` response, which must be
+    /// treated as "not ready" so callers can retry the whole session flow.
+    pub async fn probe_video_url(&self, video_url: &str) -> anyhow::Result<bool> {
+        let response = self
+            .client
+            .get(video_url)
+            .header(USER_AGENT, get_chrome_rua())
+            .header(ORIGIN, HeaderValue::from_str(self.origin())?)
+            .header(REFERER, HeaderValue::from_str(self.origin())?)
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to probe the Sheeta HLS playlist."))?;
+        let status = response.status();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to read the Sheeta HLS probe response."))?;
+
+        Ok(status.is_success() && is_hls_playlist(&body))
+    }
+
     pub fn origin(&self) -> &str {
         &self.origin
     }
 }
 
+fn is_hls_playlist(body: &[u8]) -> bool {
+    String::from_utf8_lossy(body)
+        .lines()
+        .any(|line| line.trim().trim_start_matches('\u{feff}').trim() == "#EXTM3U")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
 
-    #[tokio::test]
-    async fn test_regex() {
+    #[test]
+    fn test_regex() {
         let regex = SheetaClient::site_regex("nicochannel.jp");
 
         let captures = regex
             .captures("https://nicochannel.jp/not-equal-me-plus/video/smLzU6uZ2LnUvqeDBtoXSxvr")
             .unwrap();
         assert_eq!(
-            captures.get(1).unwrap().as_str(),
+            captures.name("video_id").unwrap().as_str(),
             "smLzU6uZ2LnUvqeDBtoXSxvr"
         );
 
@@ -150,22 +184,24 @@ mod tests {
             .captures("https://nicochannel.jp/video/smLzU6uZ2LnUvqeDBtoXSxvr")
             .unwrap();
         assert_eq!(
-            captures.get(1).unwrap().as_str(),
+            captures.name("video_id").unwrap().as_str(),
             "smLzU6uZ2LnUvqeDBtoXSxvr"
         );
     }
 
     #[tokio::test]
+    #[ignore = "requires the live Sheeta API"]
     async fn test_get_session_id() {
         let client = SheetaClient::nico_channel_plus(Default::default());
         let session_id = client
             .get_session_id(0, "smHLeLu9aQtR3taSjgCdEqvC")
             .await
             .unwrap();
-        println!("session_id: {}", session_id);
+        assert!(!session_id.is_empty());
     }
 
     #[tokio::test]
+    #[ignore = "requires the live HLS authorization endpoint"]
     async fn test_get_video_url() -> anyhow::Result<()> {
         let client = SheetaClient::new(
             "https://api.nicochannel.jp".to_string(),
@@ -177,7 +213,59 @@ mod tests {
             .get_video_url("39447efb-e081-4b16-8984-7ee8da96bfe0")
             .await;
         let response = reqwest::get(video_url).await?;
-        println!("response: {:?}", response.text().await?);
+        assert!(response.status().is_success());
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_hls_playlist() {
+        assert!(is_hls_playlist(b"#EXTM3U\n#EXT-X-VERSION:3\n"));
+        assert!(is_hls_playlist(b"\xef\xbb\xbf#EXTM3U\n"));
+        assert!(!is_hls_playlist(
+            br#"<?xml version=\"1.0\"?><Error><Code>NoSuchKey</Code></Error>"#
+        ));
+    }
+
+    #[tokio::test]
+    async fn probe_requires_a_successful_hls_playlist_response() -> anyhow::Result<()> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/ready"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("#EXTM3U\n#EXT-X-VERSION:3\n"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/not-playlist"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<Error>NoSuchKey</Error>"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/http-error"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("#EXTM3U\n"))
+            .mount(&server)
+            .await;
+
+        let client = SheetaClient::new(
+            "https://api.example.test".to_string(),
+            server.uri(),
+            reqwest::Client::new(),
+        );
+        assert!(
+            client
+                .probe_video_url(&format!("{}/ready", server.uri()))
+                .await?
+        );
+        assert!(
+            !client
+                .probe_video_url(&format!("{}/not-playlist", server.uri()))
+                .await?
+        );
+        assert!(
+            !client
+                .probe_video_url(&format!("{}/http-error", server.uri()))
+                .await?
+        );
+
         Ok(())
     }
 }

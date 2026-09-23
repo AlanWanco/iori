@@ -1,5 +1,5 @@
 use futures::{Stream, stream};
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc};
 use url::Url;
 
@@ -11,8 +11,14 @@ use crate::{
     util::mix::VecMix,
 };
 
+const MANIFEST_RECOVERY_DELAY: Duration = Duration::from_secs(2);
+
+type ManifestRecovery =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Option<Url>> + Send>> + Send + Sync>;
+
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
+    manifest_recovery: Option<ManifestRecovery>,
 }
 
 impl HlsLiveSource {
@@ -22,7 +28,46 @@ impl HlsLiveSource {
                 Url::parse(&m3u8_url)?,
                 key,
             ))),
+            manifest_recovery: None,
         })
+    }
+
+    /// Configure a callback that returns a replacement playlist URL after
+    /// manifest retries are exhausted.
+    pub fn with_manifest_recovery<F, Fut>(mut self, recovery: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Option<Url>> + Send + 'static,
+    {
+        self.manifest_recovery = Some(Arc::new(move || Box::pin(recovery())));
+        self
+    }
+}
+
+async fn recover_manifest_url(
+    playlist: &Arc<Mutex<HlsPlaylistSource>>,
+    context: &IoriContext,
+    recovery: &ManifestRecovery,
+) -> bool {
+    tracing::info!("Attempting HLS playlist URL recovery after manifest retries.");
+    let Some(url) = recovery().await else {
+        tracing::warn!("HLS playlist URL recovery did not return a replacement.");
+        return false;
+    };
+
+    match playlist.lock().await.update_url(context, url).await {
+        Ok(true) => {
+            tracing::info!("HLS playlist URL recovery succeeded.");
+            true
+        }
+        Ok(false) => {
+            tracing::warn!("HLS playlist URL recovery returned an incompatible playlist.");
+            false
+        }
+        Err(_) => {
+            tracing::warn!("Failed to activate the recovered HLS playlist URL.");
+            false
+        }
     }
 }
 
@@ -33,12 +78,35 @@ impl StreamingSource for HlsLiveSource {
         &self,
         context: &IoriContext,
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
-        let mut latest_media_sequences = self.playlist.lock().await.load_streams(context).await?;
+        let playlist = self.playlist.clone();
+        let initial_recovery = self.manifest_recovery.clone();
+        let mut initial_recovery_attempted = false;
+        let mut latest_media_sequences = loop {
+            let load_result = {
+                let mut playlist = playlist.lock().await;
+                playlist.load_streams(context).await
+            };
+            match load_result {
+                Ok(media_sequences) => break media_sequences,
+                Err(IoriError::ManifestFetchError) => {
+                    if !initial_recovery_attempted && let Some(recovery) = initial_recovery.as_ref()
+                    {
+                        initial_recovery_attempted = true;
+                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                        if recover_manifest_url(&playlist, context, recovery).await {
+                            continue;
+                        }
+                    }
+                    return Err(IoriError::ManifestFetchError);
+                }
+                Err(error) => return Err(error),
+            }
+        };
 
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let playlist = self.playlist.clone();
         let context = context.clone();
+        let manifest_recovery = self.manifest_recovery.clone();
         tokio::spawn(async move {
             loop {
                 if sender.is_closed() {
@@ -46,19 +114,26 @@ impl StreamingSource for HlsLiveSource {
                 }
 
                 let before_load = tokio::time::Instant::now();
-                let (segments, is_end) = match playlist
-                    .lock()
-                    .await
-                    .load_segments(&context, &latest_media_sequences)
-                    .await
-                {
+                let load_result = {
+                    let mut playlist = playlist.lock().await;
+                    playlist
+                        .load_segments(&context, &latest_media_sequences)
+                        .await
+                };
+                let (segments, is_end) = match load_result {
                     Ok(v) => v,
                     Err(IoriError::ManifestFetchError) => {
-                        tracing::error!("Exceeded retry limit for fetching segments, exiting...");
+                        if let Some(recovery) = manifest_recovery.as_ref() {
+                            tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                            if recover_manifest_url(&playlist, &context, recovery).await {
+                                continue;
+                            }
+                        }
+                        tracing::error!("Exceeded retry limit for fetching HLS manifests.");
                         break;
                     }
-                    Err(e) => {
-                        tracing::error!("Failed to fetch segments: {e}");
+                    Err(_) => {
+                        tracing::error!("Failed to process HLS playlist segments.");
                         break;
                     }
                 };

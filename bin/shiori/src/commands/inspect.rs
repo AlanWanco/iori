@@ -52,7 +52,17 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
         })
         .await?;
 
-    eprintln!("{matched_inspector}: {data:?}");
+    if matches!(
+        matched_inspector.as_ref(),
+        "sheeta" | "nicochannel+" | "qlover+"
+    ) {
+        eprintln!(
+            "{matched_inspector}: {} playlist(s); URLs and session data redacted",
+            data.len()
+        );
+    } else {
+        eprintln!("{matched_inspector}: {data:?}");
+    }
 
     Ok(())
 }

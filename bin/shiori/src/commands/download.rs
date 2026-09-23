@@ -127,8 +127,21 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
-                downloader.download(source).await?;
+                if let Some(original_url) = self.extra.original_url.as_deref()
+                    && shiori_plugin_sheeta::is_sheeta_url(original_url)
+                {
+                    let source = shiori_plugin_sheeta::SheetaSource::new(
+                        http.clone(),
+                        self.url,
+                        original_url.to_string(),
+                        self.decrypt.key.as_deref(),
+                    )
+                    .await?;
+                    downloader.download(source).await?;
+                } else {
+                    let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
+                    downloader.download(source).await?;
+                }
             }
             PlaylistType::DASH => {
                 let source = CommonDashLiveSource::new(
@@ -327,6 +340,7 @@ pub struct ExtraOptions {
     /// Force Dash mode
     pub playlist_type: Option<PlaylistType>,
     pub initial_playlist_data: Option<String>,
+    pub original_url: Option<String>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -473,6 +487,7 @@ where
             extra: ExtraOptions {
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
+                original_url: data.source.and_then(|source| source.original_url),
             },
             output: OutputOptions {
                 output: data.title.map(|title| sanitize(&title).into()),

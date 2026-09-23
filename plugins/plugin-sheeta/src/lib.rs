@@ -1,3 +1,7 @@
+mod source;
+
+pub use source::{SheetaSource, is_sheeta_url};
+
 use anyhow::Context;
 use iori_sheeta::client::SheetaClient;
 use shiori_plugin::*;
@@ -79,6 +83,13 @@ impl Inspect for SheetaInspector {
 
         let session_id = client.get_session_id(0, video_id).await?;
         let video_url = client.get_video_url(&session_id).await;
+        if !client.probe_video_url(&video_url).await? {
+            // The session API may return successfully before the CDN publishes
+            // the corresponding HLS object. Returning None lets the generic
+            // `--wait` inspector loop create a fresh session and try again.
+            return Ok(InspectResult::None);
+        }
+
         Ok(InspectResult::Playlist(InspectPlaylist {
             playlist_url: video_url,
             headers: vec![

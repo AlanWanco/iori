@@ -14,3 +14,6 @@ fake_user_agent.workspace = true
 
 shiori-plugin.workspace = true
 regex.workspace = true
+
+[dev-dependencies]
+wiremock = "0.6.3"

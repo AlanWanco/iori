@@ -2,40 +2,66 @@ use crate::error::{IoriError, IoriResult};
 use iori_hls::{MediaPlaylist, Playlist};
 use reqwest::Client;
 use reqwest::Url;
+use std::time::Duration;
+
+const ACCESS_DENIED_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+fn is_access_denied_playlist_response(status: reqwest::StatusCode, body: &[u8]) -> bool {
+    status == reqwest::StatusCode::FORBIDDEN
+        || body
+            .windows(b"AccessDenied".len())
+            .any(|window| window == b"AccessDenied")
+}
+
+async fn fetch_playlist(client: &Client, url: &Url, total_retry: u32) -> IoriResult<Playlist> {
+    let mut retries = total_retry;
+    loop {
+        if retries == 0 {
+            return Err(IoriError::ManifestFetchError);
+        }
+
+        match client.get(url.clone()).send().await {
+            Ok(response) => {
+                let status = response.status();
+                match response.bytes().await {
+                    Ok(body) if !status.is_success() => {
+                        tracing::warn!("HLS manifest request returned HTTP status {status}.");
+                        if is_access_denied_playlist_response(status, &body) {
+                            tracing::warn!(
+                                "HLS manifest access was denied; retrying after {} ms.",
+                                ACCESS_DENIED_RETRY_DELAY.as_millis()
+                            );
+                            tokio::time::sleep(ACCESS_DENIED_RETRY_DELAY).await;
+                        }
+                        retries -= 1;
+                    }
+                    Ok(body) => match iori_hls::parse_playlist_res(&body) {
+                        Ok(parsed) => return Ok(parsed),
+                        Err(_) => {
+                            tracing::warn!("Failed to parse HLS manifest response.");
+                            retries -= 1;
+                        }
+                    },
+                    Err(_) => {
+                        tracing::warn!("Failed to read HLS manifest response.");
+                        retries -= 1;
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::warn!("Failed to request HLS manifest.");
+                retries -= 1;
+            }
+        }
+    }
+}
 
 pub async fn load_playlist_with_retry(
     client: &Client,
     url: &Url,
     total_retry: u32,
 ) -> IoriResult<Playlist> {
-    let mut retry = total_retry;
-    let m3u8_parsed = loop {
-        if retry == 0 {
-            return Err(IoriError::ManifestFetchError);
-        }
-
-        match client.get(url.clone()).send().await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
-                    Ok(parsed) => break parsed,
-                    Err(error) => {
-                        tracing::warn!("Failed to parse M3U8 file: {error}");
-                        retry -= 1;
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!("Failed to fetch M3U8 file: {error}");
-                    retry -= 1;
-                }
-            },
-            Err(error) => {
-                tracing::warn!("Failed to fetch M3U8 file: {error}");
-                retry -= 1;
-            }
-        }
-    };
-
-    Ok(m3u8_parsed)
+    fetch_playlist(client, url, total_retry).await
 }
 
 #[async_recursion::async_recursion]
@@ -44,40 +70,15 @@ pub async fn load_m3u8(
     url: Url,
     total_retry: u32,
 ) -> IoriResult<(Url, MediaPlaylist)> {
-    tracing::debug!("Start fetching M3U8 file.");
+    tracing::debug!("Start fetching HLS manifest.");
 
-    let mut retry = total_retry;
-    let m3u8_parsed = loop {
-        if retry == 0 {
-            return Err(IoriError::ManifestFetchError);
-        }
+    let parsed = fetch_playlist(client, &url, total_retry).await?;
+    tracing::debug!("HLS manifest fetched.");
 
-        match client.get(url.clone()).send().await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
-                    Ok(parsed) => break parsed,
-                    Err(error) => {
-                        tracing::warn!("Failed to parse M3U8 file: {error}");
-                        retry -= 1;
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!("Failed to fetch M3U8 file: {error}");
-                    retry -= 1;
-                }
-            },
-            Err(error) => {
-                tracing::warn!("Failed to fetch M3U8 file: {error}");
-                retry -= 1;
-            }
-        }
-    };
-    tracing::debug!("M3U8 file fetched.");
-
-    match m3u8_parsed {
-        Playlist::MasterPlaylist(pl) => {
+    match parsed {
+        Playlist::MasterPlaylist(playlist) => {
             tracing::info!("Master playlist input detected. Auto selecting best quality streams.");
-            let mut variants = pl.variants;
+            let mut variants = playlist.variants;
             variants.sort_by(|a, b| {
                 // compare resolution first
                 if let (Some(a), Some(b)) = (a.resolution, b.resolution)
@@ -99,14 +100,14 @@ pub async fn load_m3u8(
                 b.bandwidth.cmp(&a.bandwidth)
             });
             let variant = variants.first().expect("No variant found");
-            let url = url.join(&variant.uri).expect("Invalid variant uri");
+            let variant_url = url.join(&variant.uri).expect("Invalid variant uri");
 
             tracing::info!(
-                "Best stream: {url}; Bandwidth: {bandwidth}",
+                "Selected best HLS stream; bandwidth: {bandwidth}",
                 bandwidth = variant.bandwidth
             );
-            load_m3u8(client, url, total_retry).await
+            load_m3u8(client, variant_url, total_retry).await
         }
-        Playlist::MediaPlaylist(pl) => Ok((url, pl)),
+        Playlist::MediaPlaylist(playlist) => Ok((url, playlist)),
     }
 }

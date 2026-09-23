@@ -2242,6 +2242,7 @@ dependencies = [
  "serde_json",
  "shiori-plugin",
  "tokio",
+ "wiremock",
 ]
 
 [[package]]

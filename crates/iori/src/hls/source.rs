@@ -66,6 +66,11 @@ impl HlsMediaPlaylistSource {
         }
     }
 
+    fn update_url(&mut self, url: Url) {
+        self.url = url.to_string();
+        self.initial_playlist = None;
+    }
+
     pub async fn load_segments(
         &mut self,
         context: &IoriContext,
@@ -218,6 +223,37 @@ impl HlsPlaylistSource {
             key: key.map(str::to_string),
             streams: Vec::new(),
         }
+    }
+
+    /// Replace the playlist URL while preserving per-stream sequence counters.
+    pub async fn update_url(&mut self, context: &IoriContext, url: Url) -> IoriResult<bool> {
+        if self.url == url {
+            return Ok(false);
+        }
+        if self.streams.is_empty() {
+            self.url = url;
+            return Ok(true);
+        }
+
+        let mut replacement = Self::new(url.clone(), self.key.as_deref());
+        replacement.load_streams(context).await?;
+        if replacement.streams.len() != self.streams.len()
+            || self
+                .streams
+                .iter()
+                .zip(&replacement.streams)
+                .any(|(current, next)| {
+                    current.stream_id != next.stream_id || current.stream_type != next.stream_type
+                })
+        {
+            return Ok(false);
+        }
+
+        for (current, next) in self.streams.iter_mut().zip(&replacement.streams) {
+            current.update_url(Url::parse(&next.url)?);
+        }
+        self.url = url;
+        Ok(true)
     }
 
     pub async fn load_streams(&mut self, context: &IoriContext) -> IoriResult<Vec<Option<u64>>> {

@@ -117,7 +117,9 @@ impl PluginManager {
         inspectors.reverse();
 
         // As `InspectBranch::Redirect` exists, we need a loop
+        let mut retry_count = 0u64;
         let result = 'outer: loop {
+            let mut should_retry = false;
             for item in inspectors.iter() {
                 // If a regex matches, we try to inspect it
                 if let Some(captures) = item.regex.captures(&url) {
@@ -144,14 +146,24 @@ impl PluginManager {
                             break 'outer (item.inspector.name(), data);
                         }
                         InspectBranch::NotFound => {
-                            if let Some(wait_time) = self.wait {
-                                sleep(Duration::from_secs(wait_time)).await;
+                            if self.wait.is_some() {
+                                should_retry = true;
                             } else {
                                 anyhow::bail!("Not found")
                             }
                         }
                     }
                 }
+            }
+
+            if should_retry {
+                let wait_time = self.wait.expect("retry requires a wait interval");
+                retry_count += 1;
+                log::info!(
+                    "No playable source found; retrying inspection in {wait_time} seconds (attempt {retry_count})."
+                );
+                sleep(Duration::from_secs(wait_time)).await;
+                continue 'outer;
             }
 
             anyhow::bail!("No inspector matched")
@@ -211,5 +223,99 @@ async fn handle_inspect_result(
         Some(InspectResult::Playlists(data)) => InspectBranch::Found(data),
         Some(InspectResult::Redirect(redirect_url)) => InspectBranch::Redirect(redirect_url),
         Some(InspectResult::None) | None => InspectBranch::NotFound,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    struct TestPlugin(Arc<AtomicUsize>);
+
+    impl ShioriPlugin for TestPlugin {
+        fn name(&self) -> Cow<'static, str> {
+            "wait-test".into()
+        }
+
+        fn version(&self) -> Cow<'static, str> {
+            "0.0.0".into()
+        }
+
+        fn description(&self) -> Option<Cow<'static, str>> {
+            None
+        }
+
+        fn register(&self, registry: &mut dyn InspectorRegistry) -> anyhow::Result<()> {
+            registry.register_inspector(
+                Regex::new("example\\.test")?,
+                Box::new(TestInspector(self.0.clone())),
+                PriorityHint::Normal,
+            );
+            Ok(())
+        }
+    }
+
+    struct TestInspector(Arc<AtomicUsize>);
+
+    #[async_trait]
+    impl Inspect for TestInspector {
+        fn name(&self) -> Cow<'static, str> {
+            "wait-test-inspector".into()
+        }
+
+        async fn inspect(
+            &self,
+            _context: &ShioriContext,
+            _url: &str,
+            _captures: &Captures,
+            _args: &dyn InspectorArguments,
+        ) -> anyhow::Result<InspectResult> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(InspectResult::None)
+            } else {
+                Ok(InspectResult::Playlist(InspectPlaylist::default()))
+            }
+        }
+    }
+
+    struct EmptyArguments;
+
+    impl InspectorArguments for EmptyArguments {
+        fn get_string(&self, _argument: &'static str) -> Option<String> {
+            None
+        }
+
+        fn get_boolean(&self, _argument: &'static str) -> bool {
+            false
+        }
+    }
+
+    fn choose_candidate(mut candidates: Vec<InspectCandidate>) -> InspectCandidate {
+        candidates.remove(0)
+    }
+
+    #[tokio::test]
+    async fn wait_retries_inspection_until_a_source_is_available() -> anyhow::Result<()> {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut manager = PluginManager::new();
+        manager.add(TestPlugin(calls.clone()));
+        let manager = manager.wait_for(0);
+        let context = ShioriContext::new(iori::IoriHttp::new(reqwest::Client::builder));
+
+        manager
+            .inspect(
+                &context,
+                "https://example.test/video/123",
+                &EmptyArguments,
+                choose_candidate,
+            )
+            .await?;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        Ok(())
     }
 }
