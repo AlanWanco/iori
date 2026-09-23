@@ -127,7 +127,8 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
+                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
+                    .with_initial_segment_limit(self.download.initial_segments);
                 downloader.download(source).await?;
             }
             PlaylistType::DASH => {
@@ -232,6 +233,16 @@ impl Default for HttpOptions {
     }
 }
 
+fn parse_positive_segment_count(value: &str) -> Result<usize, String> {
+    let count = value
+        .parse::<usize>()
+        .map_err(|_| "expected a positive integer".to_string())?;
+    if count == 0 {
+        return Err("the segment count must be greater than zero".to_string());
+    }
+    Ok(count)
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct DownloadOptions {
     #[clap(long, alias = "threads", default_value = "5")]
@@ -245,6 +256,10 @@ pub struct DownloadOptions {
     #[clap(long, default_value = "3")]
     #[clap(about_ll = "download-manifest-retries")]
     pub manifest_retries: u32,
+
+    #[clap(about_ll = "download-initial-segments")]
+    #[clap(long, value_parser = parse_positive_segment_count)]
+    pub initial_segments: Option<usize>,
 }
 
 impl Default for DownloadOptions {
@@ -253,6 +268,7 @@ impl Default for DownloadOptions {
             concurrency: NonZeroU32::new(5).unwrap(),
             segment_retries: 5,
             manifest_retries: 3,
+            initial_segments: None,
         }
     }
 }

@@ -1,3 +1,4 @@
+mod initial_segments;
 mod m3u8_rs;
 mod rfc8216;
 

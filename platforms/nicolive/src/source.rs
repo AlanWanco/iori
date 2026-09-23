@@ -55,6 +55,12 @@ impl NicoTimeshiftSource {
 
         Ok(Self(HlsLiveSource::new(stream.uri, None)?))
     }
+
+    /// Set the maximum number of segments to keep from the first playlist fetch.
+    pub fn with_initial_segment_limit(mut self, limit: Option<usize>) -> Self {
+        self.0 = self.0.with_initial_segment_limit(limit);
+        self
+    }
 }
 
 impl StreamingSource for NicoTimeshiftSource {

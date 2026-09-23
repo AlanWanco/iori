@@ -26,6 +26,16 @@ use reqwest::{
 };
 use tracing_subscriber::filter::LevelFilter;
 
+fn parse_positive_segment_count(value: &str) -> Result<usize, String> {
+    let count = value
+        .parse::<usize>()
+        .map_err(|_| "expected a positive integer".to_string())?;
+    if count == 0 {
+        return Err("the segment count must be greater than zero".to_string());
+    }
+    Ok(count)
+}
+
 #[derive(clap::Parser, Debug, Clone)]
 #[clap(version = env!("IORI_MINYAMI_VERSION"), author)]
 pub struct MinyamiArgs {
@@ -126,6 +136,12 @@ pub struct MinyamiArgs {
     /// Specify segment range to download in archive mode.
     #[clap(long, default_value = "-")]
     pub range: SegmentRange,
+
+    /// [Iori Argument]
+    /// Only keep the last N segments from the initial playlist fetch in live mode.
+    /// Reduces startup latency for live streams with a long VOD buffer.
+    #[clap(long, value_parser = parse_positive_segment_count)]
+    pub initial_segments: Option<usize>,
 
     /// [Iori Argument]
     /// Timeout seconds for each manifest/segment request.
@@ -326,7 +342,9 @@ impl MinyamiArgs {
                 )
             };
 
-            let source = NicoTimeshiftSource::new(http.clone(), wss_url, quality, false).await?;
+            let source = NicoTimeshiftSource::new(http.clone(), wss_url, quality, false)
+                .await?
+                .with_initial_segment_limit(self.initial_segments);
             self.download(http, source, cache).await?;
             return Ok(());
         }
@@ -339,7 +357,8 @@ impl MinyamiArgs {
             }
             // HLS Live
             (false, true) => {
-                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?;
+                let source = HlsLiveSource::new(self.m3u8.clone(), self.key.as_deref())?
+                    .with_initial_segment_limit(self.initial_segments);
                 self.download(http, source, cache).await?;
             }
             // HLS Archive
