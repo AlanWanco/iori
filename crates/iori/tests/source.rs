@@ -18,6 +18,8 @@ pub struct TestSegment {
     pub delay: Option<Duration>,
     pub concurrent_counter: Arc<AtomicU32>,
     pub max_concurrent: Arc<AtomicU32>,
+    pub stream_type: StreamType,
+    pub synchronization_key: Option<(u64, u64)>,
 }
 
 impl TestSegment {
@@ -30,7 +32,19 @@ impl TestSegment {
             delay: None,
             concurrent_counter: Arc::new(AtomicU32::new(0)),
             max_concurrent: Arc::new(AtomicU32::new(0)),
+            stream_type: StreamType::Video,
+            synchronization_key: None,
         }
+    }
+
+    pub fn with_stream_type(mut self, stream_type: StreamType) -> Self {
+        self.stream_type = stream_type;
+        self
+    }
+
+    pub fn with_synchronization_key(mut self, key: (u64, u64)) -> Self {
+        self.synchronization_key = Some(key);
+        self
     }
 
     pub fn with_fail_count(mut self, fail_count: u8) -> Self {
@@ -108,7 +122,11 @@ impl StreamingSegment for TestSegment {
     }
 
     fn stream_type(&self) -> StreamType {
-        StreamType::Video
+        self.stream_type
+    }
+
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        self.synchronization_key
     }
 
     fn format(&self) -> SegmentFormat {

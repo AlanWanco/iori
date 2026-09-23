@@ -6,10 +6,79 @@ use crate::{
     download::DownloaderApp, error::IoriResult, merge::Merger,
 };
 use futures::StreamExt;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::{num::NonZeroU32, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, Semaphore, oneshot};
+
+struct SegmentDownloadOutcome {
+    segment: SegmentInfo,
+    succeeded: bool,
+}
+
+async fn download_segment<S, C>(
+    segment: S,
+    context: IoriContext,
+    cache: Arc<C>,
+    retries: u32,
+) -> SegmentDownloadOutcome
+where
+    S: StreamingSegment + WriteSegment + Send + 'static,
+    C: CacheSource + Send + Sync + 'static,
+{
+    let segment_info = SegmentInfo::from(&segment);
+    let filename = segment_info.file_name.clone();
+    let mut retries = retries;
+
+    loop {
+        if retries == 0 {
+            return SegmentDownloadOutcome {
+                segment: segment_info,
+                succeeded: false,
+            };
+        }
+
+        let writer = cache.open_writer(&segment_info).await.transpose();
+        let Some(writer) = writer else {
+            return SegmentDownloadOutcome {
+                segment: segment_info,
+                succeeded: true,
+            };
+        };
+
+        let mut writer = match writer {
+            Ok(writer) => writer,
+            Err(error) => {
+                tracing::warn!("Failed to open writer for {filename}: {error}. Retrying later.");
+                retries -= 1;
+                continue;
+            }
+        };
+
+        // Workaround for `higher-ranked lifetime error`.
+        let result = segment.write_segment(&context, &mut writer).await;
+        let result = match result {
+            Ok(()) => writer.shutdown().await.map_err(IoriError::IOError),
+            Err(error) => Err(error),
+        };
+        drop(writer);
+
+        match result {
+            Ok(()) => {
+                return SegmentDownloadOutcome {
+                    segment: segment_info,
+                    succeeded: true,
+                };
+            }
+            Err(error) => {
+                _ = cache.invalidate(&segment_info).await;
+                tracing::warn!("Processing {filename} failed, retry later. {error}");
+                retries -= 1;
+            }
+        }
+    }
+}
 
 /// Spawn a task that listens for Ctrl-C signals and stops the downloader
 ///
@@ -60,6 +129,7 @@ impl ParallelDownloader {
 impl<S, M, C, A> ParallelDownloader<S, M, C, A>
 where
     S: StreamingSource + Send + Sync + 'static,
+    S::Segment: StreamingSegment + WriteSegment + Send + 'static,
     M: Merger + Send + Sync + 'static,
     C: CacheSource + Send + Sync + 'static,
     A: DownloaderApp + Send + Sync + 'static,
@@ -82,76 +152,75 @@ where
                 .on_receive_segments(&segments.iter().map(SegmentInfo::from).collect::<Vec<_>>())
                 .await;
 
+            let mut synchronized_groups: Vec<Vec<S::Segment>> = Vec::new();
+            let mut group_indexes: HashMap<(u64, u64), usize> = HashMap::new();
             for segment in segments {
-                let segment_info = SegmentInfo::from(&segment);
+                if let Some(key) = segment.synchronization_key() {
+                    if let Some(&index) = group_indexes.get(&key) {
+                        synchronized_groups[index].push(segment);
+                    } else {
+                        let index = synchronized_groups.len();
+                        group_indexes.insert(key, index);
+                        synchronized_groups.push(vec![segment]);
+                    }
+                } else {
+                    synchronized_groups.push(vec![segment]);
+                }
+            }
 
-                let permit = self.permits.clone().acquire_owned().await.unwrap();
+            for group in synchronized_groups {
+                let synchronized = group.len() > 1
+                    && group
+                        .iter()
+                        .any(|segment| segment.stream_type() == crate::StreamType::Audio)
+                    && group
+                        .iter()
+                        .any(|segment| segment.stream_type() == crate::StreamType::Video);
 
                 let context = self.context.clone();
                 let app = self.app.clone();
                 let merger = self.merger.clone();
                 let cache = self.cache.clone();
+                let retries = self.retries;
+                let permit = self.permits.clone().acquire_owned().await.unwrap();
 
-                let mut retries = self.retries;
                 tokio::spawn(async move {
-                    let filename = segment.file_name();
+                    let mut outcomes = Vec::with_capacity(group.len());
+                    for segment in group {
+                        outcomes.push(
+                            download_segment(segment, context.clone(), cache.clone(), retries)
+                                .await,
+                        );
+                    }
+                    let group_failed =
+                        synchronized && outcomes.iter().any(|outcome| !outcome.succeeded);
 
-                    loop {
-                        if retries == 0 {
-                            app.on_failed_segment(&segment_info).await;
-                            if let Err(e) = merger.lock().await.fail(segment_info, cache).await {
-                                tracing::error!("Failed to mark {filename} as failed: {e}");
+                    for outcome in outcomes {
+                        let filename = outcome.segment.file_name.clone();
+                        if group_failed || !outcome.succeeded {
+                            app.on_failed_segment(&outcome.segment).await;
+                            if let Err(error) = merger
+                                .lock()
+                                .await
+                                .fail(outcome.segment, cache.clone())
+                                .await
+                            {
+                                tracing::error!("Failed to mark {filename} as failed: {error}");
                             }
-                            return;
-                        }
-
-                        let writer = cache.open_writer(&segment_info).await.transpose();
-                        let Some(writer) = writer else {
-                            app.on_downloaded_segment(&segment_info).await;
-                            if let Err(e) = merger.lock().await.update(segment_info, cache).await {
-                                tracing::error!("Failed to mark {filename} as downloaded: {e}");
-                            }
-                            return;
-                        };
-
-                        let mut writer = match writer {
-                            Ok(writer) => writer,
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to open writer for {filename}: {e}. Retrying later."
-                                );
-                                retries -= 1;
-                                continue;
-                            }
-                        };
-
-                        // Workaround for `higher-ranked lifetime error`
-                        let result = segment.write_segment(&context, &mut writer).await;
-                        let result = match result {
-                            // graceful shutdown
-                            Ok(_) => writer.shutdown().await.map_err(IoriError::IOError),
-                            Err(e) => Err(e),
-                        };
-                        drop(writer);
-                        match result {
-                            Ok(_) => break,
-                            Err(e) => {
-                                // invalidate the cache on failure
-                                _ = cache.invalidate(&segment_info).await;
-
-                                tracing::warn!("Processing {filename} failed, retry later. {e}");
-                                retries -= 1;
+                        } else {
+                            app.on_downloaded_segment(&outcome.segment).await;
+                            if let Err(error) = merger
+                                .lock()
+                                .await
+                                .update(outcome.segment, cache.clone())
+                                .await
+                            {
+                                tracing::error!("Failed to mark {filename} as downloaded: {error}");
                             }
                         }
                     }
 
-                    // here we can not drop semaphore, because the merger might take some time to process the merging
-
-                    app.on_downloaded_segment(&segment_info).await;
-
-                    _ = merger.lock().await.update(segment_info, cache).await;
-
-                    // drop permit to release the semaphore
+                    // Keep the permit until merger work for the entire group is complete.
                     drop(permit);
                 });
             }

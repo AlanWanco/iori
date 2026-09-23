@@ -4,13 +4,35 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use iori::{
-    cache::memory::MemoryCacheSource,
+    IoriResult, SegmentInfo, StreamType,
+    cache::{CacheSource, memory::MemoryCacheSource},
     download::{ParallelDownloader, TracingApp},
-    merge::SkipMerger,
+    merge::{Merger, SkipMerger},
 };
-use tokio::sync::oneshot;
+use tokio::sync::{Mutex, oneshot};
 
 use crate::source::{TestSegment, TestSource};
+
+struct RecordingMerger(Arc<Mutex<Vec<(u64, bool)>>>);
+
+impl Merger for RecordingMerger {
+    type Result = ();
+
+    async fn update(&mut self, segment: SegmentInfo, _cache: impl CacheSource) -> IoriResult<()> {
+        self.0.lock().await.push((segment.stream_id, true));
+        Ok(())
+    }
+
+    async fn fail(&mut self, segment: SegmentInfo, cache: impl CacheSource) -> IoriResult<()> {
+        cache.invalidate(&segment).await?;
+        self.0.lock().await.push((segment.stream_id, false));
+        Ok(())
+    }
+
+    async fn finish(&mut self, _cache: impl CacheSource) -> IoriResult<Self::Result> {
+        Ok(())
+    }
+}
 
 #[tokio::test]
 async fn test_parallel_downloader_with_failed_retry() -> anyhow::Result<()> {
@@ -57,6 +79,104 @@ async fn test_parallel_downloader_with_success_retry() -> anyhow::Result<()> {
     let result = result.lock().unwrap();
     assert_eq!(result.len(), 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_parallel_downloader_fails_synchronized_pair_atomically() -> anyhow::Result<()> {
+    let key = (0, 100);
+    let segments = vec![
+        TestSegment::new(0, 0, "video.ts".to_string())
+            .with_stream_type(StreamType::Video)
+            .with_synchronization_key(key)
+            .with_fail_count(1),
+        TestSegment::new(1, 0, "audio.m4a".to_string())
+            .with_stream_type(StreamType::Audio)
+            .with_synchronization_key(key),
+    ];
+    let source = TestSource::new(segments);
+    let cache = Arc::new(MemoryCacheSource::new());
+    let events = Arc::new(Mutex::new(Vec::new()));
+
+    ParallelDownloader::builder(Default::default())
+        .app(TracingApp::default())
+        .merger(RecordingMerger(events.clone()))
+        .cache(cache.clone())
+        .concurrency(NonZeroU32::new(1).unwrap())
+        .retries(1)
+        .ctrlc_handler()
+        .download(source)
+        .await?;
+
+    assert!(cache.into_inner().lock().unwrap().is_empty());
+    let events = events.lock().await;
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().all(|(_, succeeded)| !succeeded));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_parallel_downloader_commits_synchronized_pair_together() -> anyhow::Result<()> {
+    let key = (0, 100);
+    let segments = vec![
+        TestSegment::new(0, 0, "video.ts".to_string())
+            .with_stream_type(StreamType::Video)
+            .with_synchronization_key(key),
+        TestSegment::new(1, 0, "audio.m4a".to_string())
+            .with_stream_type(StreamType::Audio)
+            .with_synchronization_key(key),
+    ];
+    let source = TestSource::new(segments);
+    let cache = Arc::new(MemoryCacheSource::new());
+    let events = Arc::new(Mutex::new(Vec::new()));
+
+    ParallelDownloader::builder(Default::default())
+        .app(TracingApp::default())
+        .merger(RecordingMerger(events.clone()))
+        .cache(cache.clone())
+        .concurrency(NonZeroU32::new(1).unwrap())
+        .retries(1)
+        .ctrlc_handler()
+        .download(source)
+        .await?;
+
+    assert_eq!(cache.into_inner().lock().unwrap().len(), 2);
+    let events = events.lock().await;
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().all(|(_, succeeded)| *succeeded));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_parallel_downloader_does_not_pair_different_keys() -> anyhow::Result<()> {
+    let segments = vec![
+        TestSegment::new(0, 0, "video.ts".to_string())
+            .with_stream_type(StreamType::Video)
+            .with_synchronization_key((0, 100))
+            .with_fail_count(1),
+        TestSegment::new(1, 0, "audio.m4a".to_string())
+            .with_stream_type(StreamType::Audio)
+            .with_synchronization_key((0, 101)),
+    ];
+    let source = TestSource::new(segments);
+    let cache = Arc::new(MemoryCacheSource::new());
+    let events = Arc::new(Mutex::new(Vec::new()));
+
+    ParallelDownloader::builder(Default::default())
+        .app(TracingApp::default())
+        .merger(RecordingMerger(events.clone()))
+        .cache(cache.clone())
+        .concurrency(NonZeroU32::new(1).unwrap())
+        .retries(1)
+        .ctrlc_handler()
+        .download(source)
+        .await?;
+
+    let result = cache.into_inner();
+    assert_eq!(result.lock().unwrap().len(), 1);
+    let events = events.lock().await;
+    assert_eq!(events.len(), 2);
+    assert_eq!(events.iter().filter(|(_, succeeded)| *succeeded).count(), 1);
     Ok(())
 }
 

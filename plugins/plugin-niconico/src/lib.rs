@@ -47,6 +47,11 @@ impl ShioriPlugin for NiconicoPlugin {
             "nico-danmaku-only",
             "[NicoLive] Only download danmaku without video.",
         );
+        command.add_argument(
+            "nico-relay-buffer-segments",
+            Some("nico_relay_buffer_segments"),
+            "[NicoLive] Number of HLS segments to buffer before starting a pipe relay. 0 disables buffering.",
+        );
     }
 
     fn register(&self, registry: &mut dyn InspectorRegistry) -> anyhow::Result<()> {

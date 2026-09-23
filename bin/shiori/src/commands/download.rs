@@ -40,6 +40,8 @@ type MergerType = iori_ffmpeg::FFmpegMerger;
 #[cfg(not(feature = "ffmpeg"))]
 type MergerType = iori::merge::MkvmergeMerger;
 
+const DEFAULT_NICO_RELAY_BUFFER_SEGMENTS: usize = 3;
+
 #[derive(Parser, Clone, Default)]
 #[clap(name = "download", visible_alias = "dl", short_flag = 'D')]
 pub struct DownloadCommand<I>
@@ -86,7 +88,7 @@ where
 
 impl<Ext> DownloadCommand<Ext>
 where
-    Ext: Args + Clone + Default + Send + Sync + 'static,
+    Ext: Args + Clone + Default + Send + Sync + 'static + shiori_plugin::InspectorArguments,
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
@@ -96,6 +98,18 @@ where
             shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
             manifest_retries: self.download.manifest_retries,
             segment_retries: self.download.segment_retries,
+        };
+
+        let streams_hint = self.extra.streams_hint;
+        let pipe_buffer_segments = if self.extra.platform.as_deref() == Some("niconico")
+            && streams_hint.unwrap_or(1) > 1
+        {
+            self.inspector_options
+                .get_string("nico-relay-buffer-segments")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(DEFAULT_NICO_RELAY_BUFFER_SEGMENTS)
+        } else {
+            0
         };
 
         let playlist_type = match self.extra.playlist_type {
@@ -116,7 +130,10 @@ where
             .concurrency(self.download.concurrency)
             .retries(self.download.segment_retries)
             .cache(self.cache.into_cache()?)
-            .merger(self.output.into_merger()?)
+            .merger(
+                self.output
+                    .into_merger(streams_hint, pipe_buffer_segments)?,
+            )
             .stop_signal(stop_signal);
 
         match playlist_type {
@@ -327,6 +344,8 @@ pub struct ExtraOptions {
     /// Force Dash mode
     pub playlist_type: Option<PlaylistType>,
     pub initial_playlist_data: Option<String>,
+    pub platform: Option<String>,
+    pub streams_hint: Option<u32>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -373,7 +392,11 @@ pub struct OutputModeOptions {
 }
 
 impl OutputOptions {
-    pub fn into_merger(self) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
+    pub fn into_merger(
+        self,
+        streams_hint: Option<u32>,
+        pipe_buffer_segments: usize,
+    ) -> anyhow::Result<IoriMerger<MergerType, MergerType>> {
         Ok(if self.output_mode.no_merge {
             IoriMerger::skip()
         } else if self.output_mode.proxy_mode {
@@ -384,11 +407,21 @@ impl OutputOptions {
             IoriMerger::proxy(addr)
         } else if self.output_mode.pipe || self.output_mode.pipe_mux {
             if self.output_mode.pipe_mux {
-                IoriMerger::pipe_mux(self.output.unwrap_or("-".into()), self.recycle, None)
+                IoriMerger::pipe_mux_with_audio_buffer(
+                    self.output.unwrap_or("-".into()),
+                    self.recycle,
+                    None,
+                    streams_hint.map(|hint| hint > 1).unwrap_or(true),
+                    pipe_buffer_segments,
+                )
             } else if let Some(file) = self.output {
-                IoriMerger::pipe_to_file(file, self.recycle)
+                if file.to_string_lossy() == "-" {
+                    IoriMerger::pipe_with_buffer(self.recycle, pipe_buffer_segments)
+                } else {
+                    IoriMerger::pipe_to_file(file, self.recycle)
+                }
             } else {
-                IoriMerger::pipe(self.recycle)
+                IoriMerger::pipe_with_buffer(self.recycle, pipe_buffer_segments)
             }
         } else if let Some(mut output) = self.output {
             if output.exists() {
@@ -473,6 +506,8 @@ where
             extra: ExtraOptions {
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
+                platform: data.source.as_ref().map(|source| source.platform.clone()),
+                streams_hint: data.streams_hint,
             },
             output: OutputOptions {
                 output: data.title.map(|title| sanitize(&title).into()),

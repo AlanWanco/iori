@@ -78,6 +78,13 @@ pub trait StreamingSegment {
         0
     }
 
+    /// Optional key for matching related segments, such as separate audio and video tracks.
+    ///
+    /// Segments with the same key may be downloaded and committed as one unit by a downloader.
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        None
+    }
+
     /// File name of the segment
     fn file_name(&self) -> &str;
 

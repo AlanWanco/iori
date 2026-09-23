@@ -65,6 +65,10 @@ impl StreamingSegment for M3u8Segment {
     fn part_index(&self) -> u64 {
         self.part_index
     }
+
+    fn synchronization_key(&self) -> Option<(u64, u64)> {
+        Some((self.part_index, self.media_sequence))
+    }
 }
 
 impl RemoteStreamingSegment for M3u8Segment {

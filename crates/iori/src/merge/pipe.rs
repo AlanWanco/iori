@@ -5,7 +5,12 @@ use crate::{
     error::IoriResult,
     util::{ordered_stream::OrderedStream, path::DuplicateOutputFileNamer},
 };
-use std::{path::PathBuf, pin::Pin, process::Stdio};
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+    pin::Pin,
+    process::Stdio,
+};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     process::Command,
@@ -18,6 +23,176 @@ type SendSegment = (
     StreamType,
     Pin<Box<dyn Future<Output = IoriResult<()>> + Send>>,
 );
+
+fn is_live_output(output: &Path) -> bool {
+    let output = output.to_string_lossy();
+    output.starts_with("rtmp://") || output.starts_with("rtmps://")
+}
+
+fn readrate_args(use_readrate_catchup: bool) -> &'static [&'static str] {
+    if use_readrate_catchup {
+        &["-re", "-readrate_catchup", "1.25"]
+    } else {
+        &["-re"]
+    }
+}
+
+async fn ffmpeg_supports_readrate_catchup() -> bool {
+    let Ok(output) = Command::new("ffmpeg")
+        .args(["-hide_banner", "-h", "full"])
+        .output()
+        .await
+    else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    output
+        .stdout
+        .into_iter()
+        .chain(output.stderr)
+        .collect::<Vec<_>>()
+        .split(|byte| *byte == b'\n')
+        .map(|line| String::from_utf8_lossy(line).trim().to_string())
+        .any(|line| line.split_whitespace().next() == Some("-readrate_catchup"))
+}
+
+#[cfg(target_os = "windows")]
+type AudioReceiver = String;
+#[cfg(not(target_os = "windows"))]
+type AudioReceiver = std::os::fd::OwnedFd;
+
+async fn spawn_ffmpeg(
+    output: PathBuf,
+    extra_command: Option<String>,
+    has_audio: bool,
+    audio_receiver: Option<AudioReceiver>,
+    needs_readrate: bool,
+    use_readrate_catchup: bool,
+) -> std::io::Result<tokio::process::ChildStdin> {
+    let mut command = Command::new("ffmpeg");
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    #[cfg(not(target_os = "windows"))]
+    if has_audio {
+        use command_fds::{CommandFdExt, FdMapping};
+        let audio_receiver = audio_receiver
+            .ok_or_else(|| std::io::Error::other("FFmpeg audio pipe reader was not configured"))?;
+        command
+            .fd_mappings(vec![FdMapping {
+                parent_fd: audio_receiver,
+                child_fd: 3,
+            }])
+            .map_err(std::io::Error::other)?;
+    }
+
+    command.args(["-y", "-fflags", "+genpts"]);
+    if needs_readrate {
+        command.args(readrate_args(use_readrate_catchup));
+    }
+    command.args(["-i", "pipe:0"]);
+
+    if has_audio {
+        #[cfg(target_os = "windows")]
+        {
+            let audio_receiver = audio_receiver.ok_or_else(|| {
+                std::io::Error::other("FFmpeg audio pipe name was not configured")
+            })?;
+            if needs_readrate {
+                command.args(readrate_args(use_readrate_catchup));
+            }
+            command.args(["-i", &audio_receiver]);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if needs_readrate {
+                command.args(readrate_args(use_readrate_catchup));
+            }
+            command.args(["-i", "pipe:3"]);
+        }
+        command.args(["-map", "0", "-map", "1"]);
+    }
+
+    #[rustfmt::skip]
+    command.args([
+        "-strict", "unofficial",
+        "-c", "copy",
+        "-metadata", &format!(r#"date="{}""#, chrono::Utc::now().to_rfc3339()),
+        "-ignore_unknown",
+        "-copy_unknown",
+    ]);
+
+    if let Some(dest) = extra_command.and_then(|command| shlex::split(&command)) {
+        command.args(dest);
+    } else if is_live_output(&output) {
+        command.args(["-f", "flv"]).arg(output);
+    } else {
+        command.args(["-f", "mpegts", "-shortest"]).arg(output);
+    }
+
+    let mut process = command.spawn()?;
+    let stdin = process
+        .stdin
+        .take()
+        .ok_or_else(|| std::io::Error::other("FFmpeg was spawned without a piped stdin"))?;
+
+    tokio::spawn(async move {
+        match process.wait().await {
+            Ok(status) if status.success() => tracing::info!("[ffmpeg] exited successfully"),
+            Ok(status) => tracing::error!("[ffmpeg] exited with status: {status}"),
+            Err(error) => tracing::error!("[ffmpeg] failed to wait for process: {error}"),
+        }
+    });
+
+    Ok(stdin)
+}
+
+struct SegmentBuffer<T> {
+    items: VecDeque<(u64, T)>,
+    target: usize,
+    primed: bool,
+    ended: bool,
+}
+
+impl<T> SegmentBuffer<T> {
+    fn new(target: usize) -> Self {
+        Self {
+            items: VecDeque::new(),
+            target,
+            primed: false,
+            ended: false,
+        }
+    }
+
+    async fn next(&mut self, stream: &mut OrderedStream<T>) -> Option<(u64, T)> {
+        if !self.primed {
+            while self.items.len() < self.target {
+                let Some(item) = stream.next().await else {
+                    self.ended = true;
+                    break;
+                };
+                self.items.push_back(item);
+            }
+            self.primed = true;
+        }
+
+        if let Some(item) = self.items.pop_front() {
+            return Some(item);
+        }
+
+        if self.ended {
+            None
+        } else {
+            stream.next().await
+        }
+    }
+}
 
 /// PipeMerger is a merger that pipes the segments directly to the output.
 ///
@@ -32,18 +207,28 @@ pub struct PipeMerger {
 
 impl PipeMerger {
     pub fn stdout(recycle: bool) -> Self {
-        Self::writer(recycle, tokio::io::stdout())
+        Self::stdout_with_buffer(recycle, 0)
     }
 
-    pub fn writer(
+    pub fn stdout_with_buffer(recycle: bool, buffer_segments: usize) -> Self {
+        Self::writer_with_buffer(recycle, tokio::io::stdout(), buffer_segments)
+    }
+
+    pub fn writer(recycle: bool, writer: impl AsyncWrite + Unpin + Send + Sync + 'static) -> Self {
+        Self::writer_with_buffer(recycle, writer, 0)
+    }
+
+    pub fn writer_with_buffer(
         recycle: bool,
         mut writer: impl AsyncWrite + Unpin + Send + Sync + 'static,
+        buffer_segments: usize,
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut stream: OrderedStream<Option<SendSegment>> = OrderedStream::new(rx);
         let future = tokio::spawn(async move {
-            while let Some((_, segment)) = stream.next().await {
+            let mut buffered = SegmentBuffer::new(buffer_segments);
+            while let Some((_, segment)) = buffered.next(&mut stream).await {
                 if let Some((mut reader, _type, invalidate)) = segment {
                     _ = tokio::io::copy(&mut reader, &mut writer).await;
                     if recycle {
@@ -102,120 +287,183 @@ impl PipeMerger {
     }
 
     pub fn mux(recycle: bool, output: PathBuf, extra_command: Option<String>) -> Self {
+        Self::mux_with_buffer(recycle, output, extra_command, true, 0)
+    }
+
+    pub fn mux_with_audio(
+        recycle: bool,
+        output: PathBuf,
+        extra_command: Option<String>,
+        has_audio: bool,
+    ) -> Self {
+        Self::mux_with_buffer(recycle, output, extra_command, has_audio, 0)
+    }
+
+    pub fn mux_with_buffer(
+        recycle: bool,
+        output: PathBuf,
+        extra_command: Option<String>,
+        has_audio: bool,
+        buffer_segments: usize,
+    ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut stream: OrderedStream<Option<SendSegment>> = OrderedStream::new(rx);
 
         #[cfg(target_os = "windows")]
-        let (mut audio_pipe, audio_receiver) = {
+        let (audio_pipe, audio_receiver) = if has_audio {
             let pipe_name = format!(r"\\.\pipe\iori-pipe-mux-audio-{}", rand::random::<u64>());
             let server = tokio::net::windows::named_pipe::ServerOptions::new()
                 .first_pipe_instance(true)
                 .create(&pipe_name)
                 .unwrap();
-            (server, pipe_name)
+            (Some(server), Some(pipe_name))
+        } else {
+            (None, None)
         };
 
         #[cfg(not(target_os = "windows"))]
-        let (mut audio_pipe, audio_receiver) = {
-            let (audio_pipe, audio_receiver) = tokio::net::unix::pipe::pipe().unwrap();
-            let audio_receiver = audio_receiver.into_nonblocking_fd().unwrap();
-            (audio_pipe, audio_receiver)
+        let (audio_pipe, audio_receiver) = if has_audio {
+            let (pipe, receiver) = tokio::net::unix::pipe::pipe().unwrap();
+            (Some(pipe), Some(receiver.into_nonblocking_fd().unwrap()))
+        } else {
+            (None, None)
         };
 
         let future = tokio::spawn(async move {
-            // TODO: maybe creating a new process might be better
-            let mut video_pipe = tokio::spawn(async move {
-                let mut command = Command::new("ffmpeg");
-                command
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit());
+            let needs_readrate =
+                extra_command.is_some() || buffer_segments > 0 || is_live_output(&output);
+            let use_readrate_catchup = needs_readrate && ffmpeg_supports_readrate_catchup().await;
+            #[cfg(target_os = "windows")]
+            let audio_receiver_for_initial = audio_receiver.clone();
+            #[cfg(not(target_os = "windows"))]
+            let audio_receiver_for_initial = audio_receiver.as_ref().map(|fd| {
+                fd.try_clone()
+                    .expect("Failed to duplicate audio pipe reader")
+            });
 
-                #[cfg(not(target_os = "windows"))]
-                {
-                    use command_fds::{CommandFdExt, FdMapping};
-                    command
-                        .fd_mappings(vec![FdMapping {
-                            parent_fd: audio_receiver,
-                            child_fd: 3,
-                        }])
-                        .unwrap();
-                }
-
-                command.args(["-y", "-fflags", "+genpts"]); // , "-loglevel", "quiet"
-
-                if extra_command.is_some() {
-                    command.arg("-re");
-                }
-
-                // video input: stdin
-                command.args(["-i", "pipe:0"]);
-                // audio input: mapped fd 3 or named pipe
-                #[cfg(target_os = "windows")]
-                command.args(["-i", &audio_receiver]);
-                #[cfg(not(target_os = "windows"))]
-                command.args(["-i", "pipe:3"]);
-
-                #[rustfmt::skip]
-                command.args([
-                    "-map", "0",
-                    "-map", "1",
-                    "-strict", "unofficial",
-                    "-c", "copy",
-                    "-metadata", &format!(r#"date="{}""#, chrono::Utc::now().to_rfc3339()),
-                    "-ignore_unknown",
-                    "-copy_unknown",
-                ]);
-
-                if let Some(dest) = extra_command.and_then(|s| shlex::split(&s)) {
-                    command.args(dest);
-                } else {
-                    command.args(["-f", "mpegts", "-shortest"]).arg(output);
-                }
-
-                let mut process = command.spawn().unwrap();
-                let stdin = process.stdin.take().unwrap();
-                tokio::spawn(async move {
-                    process.wait().await.unwrap();
-                });
-
-                stdin
-            })
+            let mut video_pipe = match spawn_ffmpeg(
+                output.clone(),
+                extra_command.clone(),
+                has_audio,
+                audio_receiver_for_initial,
+                needs_readrate,
+                use_readrate_catchup,
+            )
             .await
-            .unwrap();
+            {
+                Ok(pipe) => pipe,
+                Err(error) => {
+                    tracing::error!("[ffmpeg] Failed to start mux process: {error}");
+                    return;
+                }
+            };
 
             let (video_sender, mut video_receiver) = mpsc::unbounded_channel::<SendSegment>();
+            let output_for_restart = output.clone();
+            let extra_for_restart = extra_command.clone();
+            #[cfg(target_os = "windows")]
+            let audio_receiver_for_restart = audio_receiver.clone();
+            #[cfg(not(target_os = "windows"))]
+            let audio_receiver_for_restart = audio_receiver;
+
             let video_handle = tokio::spawn(async move {
                 while let Some((mut reader, _, invalidate)) = video_receiver.recv().await {
-                    tokio::io::copy(&mut reader, &mut video_pipe).await.unwrap();
-                    if recycle {
-                        invalidate.await.unwrap();
+                    if let Err(e) = tokio::io::copy(&mut reader, &mut video_pipe).await {
+                        tracing::error!("[ffmpeg] Broken video pipe: {}", e);
+                        tracing::warn!("[ffmpeg] trying to restart ffmpeg mux process...");
+
+                        #[cfg(target_os = "windows")]
+                        let audio_receiver = audio_receiver_for_restart.clone();
+                        #[cfg(not(target_os = "windows"))]
+                        let audio_receiver = audio_receiver_for_restart.as_ref().map(|fd| {
+                            fd.try_clone()
+                                .expect("Failed to duplicate audio pipe reader")
+                        });
+                        let restarted = spawn_ffmpeg(
+                            output_for_restart.clone(),
+                            extra_for_restart.clone(),
+                            has_audio,
+                            audio_receiver,
+                            needs_readrate,
+                            use_readrate_catchup,
+                        )
+                        .await;
+
+                        match restarted {
+                            Ok(new_pipe) => {
+                                video_pipe = new_pipe;
+                                tracing::warn!("[ffmpeg] restart succeeded, continue piping");
+                                continue;
+                            }
+                            Err(e) => {
+                                tracing::error!("[ffmpeg] restart failed: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    if recycle && let Err(e) = invalidate.await {
+                        tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
                     }
                 }
             });
 
             let (audio_sender, mut audio_receiver) = mpsc::unbounded_channel::<SendSegment>();
             let audio_handle = tokio::spawn(async move {
-                #[cfg(target_os = "windows")]
-                audio_pipe.connect().await.unwrap();
+                if let Some(mut audio_pipe) = audio_pipe {
+                    #[cfg(target_os = "windows")]
+                    audio_pipe.connect().await.unwrap();
 
-                while let Some((mut reader, _, invalidate)) = audio_receiver.recv().await {
-                    tokio::io::copy(&mut reader, &mut audio_pipe).await.unwrap();
-                    if recycle {
-                        invalidate.await.unwrap();
+                    while let Some((mut reader, _, invalidate)) = audio_receiver.recv().await {
+                        if let Err(e) = tokio::io::copy(&mut reader, &mut audio_pipe).await {
+                            tracing::warn!("[ffmpeg] Audio pipe disconnected: {}", e);
+                            #[cfg(target_os = "windows")]
+                            {
+                                if let Err(error) = audio_pipe.disconnect() {
+                                    tracing::debug!(
+                                        "[ffmpeg] Audio pipe was already disconnected: {error}"
+                                    );
+                                }
+                                if let Err(error) = audio_pipe.connect().await {
+                                    tracing::error!(
+                                        "[ffmpeg] Failed to reconnect audio pipe: {error}"
+                                    );
+                                    break;
+                                }
+                                continue;
+                            }
+                            #[cfg(not(target_os = "windows"))]
+                            break;
+                        }
+                        if recycle && let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                        }
+                    }
+                } else {
+                    // Just drain and discard if there's no audio pipe but we still got audio segments
+                    while let Some((_, _, invalidate)) = audio_receiver.recv().await {
+                        if recycle && let Err(e) = invalidate.await {
+                            tracing::warn!("[ffmpeg] Failed to invalidate segment: {}", e);
+                        }
                     }
                 }
             });
 
-            while let Some((_, segment)) = stream.next().await {
+            let mut buffered = SegmentBuffer::new(buffer_segments);
+            while let Some((_, segment)) = buffered.next(&mut stream).await {
                 if let Some((reader, r#type, invalidate)) = segment {
                     match r#type {
                         StreamType::Video => {
-                            video_sender.send((reader, r#type, invalidate)).unwrap();
+                            if video_sender.send((reader, r#type, invalidate)).is_err() {
+                                tracing::debug!("[ffmpeg] video receiver dropped, stopping mux");
+                                break;
+                            }
                         }
                         StreamType::Audio => {
-                            audio_sender.send((reader, r#type, invalidate)).unwrap();
+                            if audio_sender.send((reader, r#type, invalidate)).is_err() {
+                                tracing::debug!("[ffmpeg] audio receiver dropped, stopping mux");
+                                break;
+                            }
                         }
                         StreamType::Subtitle | StreamType::Unknown => {
                             if recycle {
@@ -243,9 +491,11 @@ impl PipeMerger {
         }
     }
 
-    fn send(&self, message: (u64, u64, Option<SendSegment>)) {
+    fn send(&self, message: (u64, u64, Option<SendSegment>)) -> Result<(), ()> {
         if let Some(sender) = &self.sender {
-            sender.send(message).expect("Failed to send segment");
+            sender.send(message).map_err(|_| ())
+        } else {
+            Err(())
         }
     }
 }
@@ -260,11 +510,20 @@ impl Merger for PipeMerger {
         let reader = cache.open_reader(&segment).await?;
         let invalidate = async move { cache.invalidate(&segment).await };
 
-        self.send((
-            stream_id,
-            sequence,
-            Some((Box::pin(reader), stream_type, Box::pin(invalidate))),
-        ));
+        if self
+            .send((
+                stream_id,
+                sequence,
+                Some((Box::pin(reader), stream_type, Box::pin(invalidate))),
+            ))
+            .is_err()
+        {
+            tracing::warn!("[ffmpeg] pipe closed, dropping segment");
+            return Err(crate::error::IoriError::IOError(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "Pipe to ffmpeg was closed",
+            )));
+        }
 
         Ok(())
     }
@@ -273,7 +532,7 @@ impl Merger for PipeMerger {
         let stream_id = segment.stream_id;
         cache.invalidate(&segment).await?;
 
-        self.send((stream_id, segment.sequence, None));
+        let _ = self.send((stream_id, segment.sequence, None));
 
         Ok(())
     }
@@ -293,5 +552,36 @@ impl Merger for PipeMerger {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SegmentBuffer, readrate_args};
+    use crate::util::ordered_stream::OrderedStream;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn readrate_args_are_compatible_with_older_ffmpeg() {
+        assert_eq!(readrate_args(false), &["-re"]);
+        assert_eq!(readrate_args(true), &["-re", "-readrate_catchup", "1.25"]);
+    }
+
+    #[tokio::test]
+    async fn segment_buffer_drains_primed_items_during_input_pause() {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        for sequence in 0..4 {
+            sender.send((0, sequence, sequence)).unwrap();
+        }
+        drop(sender);
+
+        let mut stream = OrderedStream::new(receiver);
+        let mut buffer = SegmentBuffer::new(3);
+
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 0)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 1)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 2)));
+        assert_eq!(buffer.next(&mut stream).await, Some((0, 3)));
+        assert_eq!(buffer.next(&mut stream).await, None);
     }
 }
