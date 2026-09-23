@@ -11,6 +11,7 @@ use crate::{
     util::mix::VecMix,
 };
 
+#[derive(Clone)]
 pub struct HlsLiveSource {
     playlist: Arc<Mutex<HlsPlaylistSource>>,
 }
@@ -23,6 +24,16 @@ impl HlsLiveSource {
                 key,
             ))),
         })
+    }
+
+    /// Switch the active playlist without resetting segment sequence state.
+    pub async fn update_playlist_url(
+        &self,
+        context: &IoriContext,
+        m3u8_url: &str,
+    ) -> IoriResult<bool> {
+        let url = Url::parse(m3u8_url)?;
+        self.playlist.lock().await.update_url(context, url).await
     }
 }
 

@@ -86,11 +86,22 @@ where
 
 impl<Ext> DownloadCommand<Ext>
 where
-    Ext: Args + Clone + Default + Send + Sync + 'static,
+    Ext: Args + Clone + Default + Send + Sync + 'static + shiori_plugin::InspectorArguments,
 {
     pub async fn download(self, stop_signal: oneshot::Receiver<()>) -> anyhow::Result<()> {
         let app = ShioriApp::new(self.clone());
+        let eplus_event_cookies = if self.extra.platform.as_deref() == Some("eplus") {
+            self.extra
+                .original_url
+                .as_ref()
+                .map(|event_url| (self.http.cookies.clone(), event_url.clone()))
+        } else {
+            None
+        };
         let http = self.http.into_client(&self.url);
+        if let Some((cookies, event_url)) = eplus_event_cookies {
+            http.add_cookies(cookies, event_url);
+        }
         let context = IoriContext {
             client: http.client(),
             shaka_packager_command: self.decrypt.shaka_packager_command.clone().into(),
@@ -127,8 +138,42 @@ where
                     );
                 }
 
-                let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
-                downloader.download(source).await?;
+                if self.extra.platform.as_deref() == Some("eplus") {
+                    if let Some(event_url) = self.extra.original_url.clone() {
+                        let credentials = match (
+                            self.inspector_options.get_string("eplus-username"),
+                            self.inspector_options.get_string("eplus-password"),
+                        ) {
+                            (Some(username), Some(password)) => {
+                                Some(iori_eplus::source::EplusCredentials { username, password })
+                            }
+                            _ => None,
+                        };
+                        let refresh_interval = self
+                            .inspector_options
+                            .get_string("eplus-refresh-interval")
+                            .and_then(|value| value.parse::<u64>().ok())
+                            .map(Duration::from_secs);
+                        let source = iori_eplus::source::EplusSource::new(
+                            http,
+                            self.url,
+                            event_url,
+                            self.decrypt.key.as_deref(),
+                            credentials,
+                        )?
+                        .with_refresh_interval(refresh_interval);
+                        downloader.download(source).await?;
+                    } else {
+                        log::warn!(
+                            "[eplus] Missing source event URL; using the selected HLS playlist directly."
+                        );
+                        let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
+                        downloader.download(source).await?;
+                    }
+                } else {
+                    let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?;
+                    downloader.download(source).await?;
+                }
             }
             PlaylistType::DASH => {
                 let source = CommonDashLiveSource::new(
@@ -327,6 +372,8 @@ pub struct ExtraOptions {
     /// Force Dash mode
     pub playlist_type: Option<PlaylistType>,
     pub initial_playlist_data: Option<String>,
+    pub platform: Option<String>,
+    pub original_url: Option<String>,
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -473,6 +520,8 @@ where
             extra: ExtraOptions {
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
+                platform: data.source.as_ref().map(|source| source.platform.clone()),
+                original_url: data.source.and_then(|source| source.original_url),
             },
             output: OutputOptions {
                 output: data.title.map(|title| sanitize(&title).into()),

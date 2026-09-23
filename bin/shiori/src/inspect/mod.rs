@@ -121,11 +121,18 @@ impl PluginManager {
             for item in inspectors.iter() {
                 // If a regex matches, we try to inspect it
                 if let Some(captures) = item.regex.captures(&url) {
+                    let is_eplus = item.inspector.name() == "eplus";
                     let inspect_result = item
                         .inspector
                         .inspect(context, &url, &captures, args)
                         .await
-                        .inspect_err(|e| log::error!("Failed to inspect {url}: {:?}", e))
+                        .inspect_err(|error| {
+                            if is_eplus {
+                                log::error!("Failed to inspect Eplus event page.");
+                            } else {
+                                log::error!("Failed to inspect {url}: {error:?}");
+                            }
+                        })
                         .ok();
                     let inspect_branch = handle_inspect_result(
                         context,

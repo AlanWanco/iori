@@ -7,6 +7,7 @@ use clap_handler::handler;
 use iori::IoriHttp;
 use reqwest::Client;
 use shiori_plugin::{InspectorArguments, InspectorCommand, ShioriContext};
+use shiori_plugin_eplus::EplusPlugin;
 use shiori_plugin_gigafile::GigafilePlugin;
 use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_radiko::RadikoPlugin;
@@ -34,6 +35,7 @@ pub(crate) fn get_default_external_inspector() -> PluginManager {
         .add(SheetaPlugin)
         .add(GigafilePlugin)
         .add(RadikoPlugin)
+        .add(EplusPlugin)
         .add(HlsPlugin)
         .add(DashPlugin);
 
@@ -52,7 +54,14 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
         })
         .await?;
 
-    eprintln!("{matched_inspector}: {data:?}");
+    if matched_inspector == "eplus" {
+        eprintln!(
+            "{matched_inspector}: {} playlist(s); URLs and cookies redacted",
+            data.len()
+        );
+    } else {
+        eprintln!("{matched_inspector}: {data:?}");
+    }
 
     Ok(())
 }

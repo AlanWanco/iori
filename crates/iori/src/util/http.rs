@@ -41,9 +41,53 @@ impl IoriHttp {
         }
     }
 
+    pub fn clear_cookies_by_names(&self, names: &[&str]) -> usize {
+        let mut lock = self.cookies_store.lock().unwrap();
+        let to_remove: Vec<(String, String, String)> = lock
+            .iter_any()
+            .filter(|cookie| names.contains(&cookie.name()))
+            .filter_map(|cookie| {
+                Some((
+                    cookie.domain()?.to_string(),
+                    cookie.path()?.to_string(),
+                    cookie.name().to_string(),
+                ))
+            })
+            .collect();
+
+        for (domain, path, name) in &to_remove {
+            let _ = lock.remove(domain, path, name);
+        }
+
+        to_remove.len()
+    }
+
+    pub fn snapshot_cookies(&self) -> CookieStore {
+        self.cookies_store.lock().unwrap().clone()
+    }
+
+    pub fn restore_cookies(&self, snapshot: CookieStore) {
+        let mut lock = self.cookies_store.lock().unwrap();
+        *lock = snapshot;
+    }
+
+    /// Export cookies that would be sent to `url`, respecting domain and path rules.
+    pub fn export_cookies_for_url(&self, url: impl IntoUrl) -> Vec<String> {
+        let url: url::Url = url.into_url().unwrap();
+        let lock = self.cookies_store.lock().unwrap();
+        lock.get_request_values(&url)
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect()
+    }
+
     pub fn builder(&self) -> ClientBuilder {
         let cookies_store = self.cookies_store.clone();
         (self.builder)().cookie_provider(cookies_store)
+    }
+
+    /// Build a client without attaching the shared cookie store.
+    pub fn raw_builder(&self) -> ClientBuilder {
+        (self.builder)()
     }
 
     pub fn client(&self) -> Client {

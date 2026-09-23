@@ -1,0 +1,17 @@
+[package]
+name = "iori-eplus"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+iori.workspace = true
+anyhow.workspace = true
+reqwest = { workspace = true, features = ["cookies"] }
+serde.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+log.workspace = true
+tokio.workspace = true
