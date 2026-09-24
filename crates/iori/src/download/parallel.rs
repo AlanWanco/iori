@@ -156,7 +156,18 @@ where
         self.app.on_start().await?;
 
         {
-            let stream = self.source.segments_stream(&self.context).await?;
+            let stream = tokio::select! {
+                result = self.source.segments_stream(&self.context) => Some(result?),
+                _ = &mut self.stop_signal => {
+                    tracing::info!("Stop signal received while starting the stream.");
+                    None
+                }
+            };
+            if stream.is_none() {
+                drop(stream);
+                return self.finish().await;
+            }
+            let stream = stream.expect("stream was checked above");
             tokio::pin!(stream);
 
             loop {
@@ -256,7 +267,11 @@ where
             }
         }
 
-        // wait for all tasks to finish
+        self.finish().await
+    }
+
+    async fn finish(self) -> IoriResult<M::Result> {
+        // Wait for all in-flight downloads to finish before finalizing the merger.
         let _ = self
             .permits
             .acquire_many(self.concurrency.get())
@@ -264,7 +279,6 @@ where
             .unwrap();
 
         self.app.on_finished().await?;
-
         self.merger.lock().await.finish(self.cache).await
     }
 }

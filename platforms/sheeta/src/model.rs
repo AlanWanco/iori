@@ -94,3 +94,26 @@ pub struct ContentProvider {
     domain: String,
     id: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::FcVideoPageResponse;
+
+    #[test]
+    fn video_page_response_preserves_japanese_title() {
+        let title = "【プレミアムプラン限定おまけパート】【ゲスト：i☆Ris山北早紀・茜屋日海夏】大西亜玖璃のPONPONPON LIVE!!#11";
+        let response: FcVideoPageResponse = serde_json::from_value(serde_json::json!({
+            "data": {
+                "video_page": {
+                    "title": title,
+                    "description": "",
+                    "fanclub_site": { "id": 956 },
+                    "video_tags": []
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(response.title(), title);
+    }
+}

@@ -1,6 +1,7 @@
 shiori-about = 又一个直播下载器
 
-download-wait = 当未检测到直播流时，是否等待直播流开始
+download-wait = 未检测到直播流时持续等待开播
+download-wait-interval = 等待重试的间隔秒数（默认 30 秒）；增大间隔可减少对平台的请求。
 download-no-tui = 禁用文本图形界面(TUI)
 download-url = 视频地址
 
@@ -27,8 +28,7 @@ download-initial-segments =
 download-live-idle-timeout =
     当直播 HLS 连续 N 秒没有新分片时停止拉取。
 
-    默认值为 30 秒。适用于不会发布 EXT-X-ENDLIST 的伪直播回放，
-    正常直播也可按需覆盖。
+    普通下载默认 30 秒；使用 --wait 时默认不启用此超时，除非显式设置该选项。
 
 download-no-live-idle-timeout = 禁用直播空闲超时自动停止行为。
 

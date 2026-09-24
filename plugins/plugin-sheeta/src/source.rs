@@ -71,6 +71,11 @@ impl SheetaSource {
         self
     }
 
+    pub fn with_manifest_retry_interval(mut self, interval: Option<std::time::Duration>) -> Self {
+        self.inner = self.inner.with_manifest_retry_interval(interval);
+        self
+    }
+
     pub fn with_idle_timeout(mut self, timeout: Option<std::time::Duration>) -> Self {
         self.inner = self.inner.with_idle_timeout(timeout);
         self

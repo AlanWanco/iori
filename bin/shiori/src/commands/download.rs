@@ -1,5 +1,10 @@
 use super::inspect::{InspectorOptions, get_default_external_inspector};
-use crate::{ShioriApp, commands::ShioriArgs, i18n::ClapI18n, inspect::InspectPlaylist};
+use crate::{
+    ShioriApp,
+    commands::{DEFAULT_WAIT_INTERVAL_SECONDS, ShioriArgs},
+    i18n::ClapI18n,
+    inspect::InspectPlaylist,
+};
 use clap::{Args, Parser};
 use clap_handler::handler;
 use fake_user_agent::get_chrome_rua;
@@ -21,9 +26,9 @@ use reqwest::{
     Client, IntoUrl,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
-use shiori_plugin::{PlaylistType, ShioriContext};
+use shiori_plugin::{InspectorArguments, PlaylistType, ShioriContext};
 use std::{
-    num::NonZeroU32,
+    num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
     str::FromStr,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -64,6 +69,10 @@ where
     #[clap(short, long)]
     #[clap(about_ll = "download-wait")]
     pub wait: bool,
+
+    #[clap(long, default_value = "30")]
+    #[clap(about_ll = "download-wait-interval")]
+    pub wait_interval: Option<NonZeroU64>,
 
     /// Hidden option for TUI to keep compatibility with old version.
     #[clap(long, alias = "experimental-ui")]
@@ -151,9 +160,18 @@ where
             .stop_signal(stop_signal);
         let live_idle_timeout = if self.download.disable_live_idle_timeout {
             None
+        } else if let Some(timeout) = self.download.live_idle_timeout {
+            Some(Duration::from_secs(timeout))
+        } else if self.wait {
+            None
         } else {
-            self.download.live_idle_timeout.map(Duration::from_secs)
+            Some(Duration::from_secs(30))
         };
+        let wait_interval = Duration::from_secs(
+            self.wait_interval
+                .map(NonZeroU64::get)
+                .unwrap_or(DEFAULT_WAIT_INTERVAL_SECONDS),
+        );
 
         match playlist_type {
             PlaylistType::HLS | PlaylistType::Unknown => {
@@ -221,11 +239,13 @@ where
                     )
                     .await?
                     .with_initial_segment_limit(self.download.initial_segments)
+                    .with_manifest_retry_interval(Some(wait_interval))
                     .with_idle_timeout(live_idle_timeout);
                     downloader.download(source).await?;
                 } else {
                     let source = HlsLiveSource::new(self.url, self.decrypt.key.as_deref())?
                         .with_initial_segment_limit(self.download.initial_segments)
+                        .with_manifest_retry_interval(self.wait.then_some(wait_interval))
                         .with_idle_timeout(live_idle_timeout);
                     downloader.download(source).await?;
                 }
@@ -363,7 +383,7 @@ pub struct DownloadOptions {
     pub initial_segments: Option<usize>,
 
     #[clap(about_ll = "download-live-idle-timeout")]
-    #[clap(long, default_value = "30")]
+    #[clap(long)]
     pub live_idle_timeout: Option<u64>,
 
     #[clap(long = "no-live-idle-timeout")]
@@ -377,7 +397,7 @@ impl Default for DownloadOptions {
             segment_retries: 5,
             manifest_retries: 3,
             initial_segments: None,
-            live_idle_timeout: Some(30),
+            live_idle_timeout: None,
             disable_live_idle_timeout: false,
         }
     }
@@ -565,13 +585,52 @@ impl OutputOptions {
 
 type ShioriDownloadCommand = DownloadCommand<InspectorOptions>;
 
+struct DownloadInspectorArguments<'a, T> {
+    inner: &'a T,
+    wait: bool,
+    skip_title: bool,
+}
+
+impl<T: InspectorArguments> InspectorArguments for DownloadInspectorArguments<'_, T> {
+    fn get_string(&self, argument: &'static str) -> Option<String> {
+        self.inner.get_string(argument)
+    }
+
+    fn get_boolean(&self, argument: &'static str) -> bool {
+        match argument {
+            "shiori-wait" => self.wait,
+            "shiori-skip-title" => self.skip_title,
+            _ => self.inner.get_boolean(argument),
+        }
+    }
+}
+
 #[handler(ShioriDownloadCommand)]
 pub async fn download(me: ShioriDownloadCommand, _shiori_args: ShioriArgs) -> anyhow::Result<()> {
     tracing::info!("Loading URL: {}", me.url);
     let shiori_context = ShioriContext::new(me.http.clone().into_client(&me.url));
-    let (_, data) = get_default_external_inspector()
-        .wait(me.wait)
-        .inspect(&shiori_context, &me.url, &me.inspector_options, |c| {
+    let wait_interval = me
+        .wait_interval
+        .map(NonZeroU64::get)
+        .unwrap_or(DEFAULT_WAIT_INTERVAL_SECONDS);
+    let inspector = get_default_external_inspector();
+    let inspector = if me.wait {
+        inspector.wait_for(wait_interval)
+    } else {
+        inspector
+    };
+    let skip_title = me.output.output.is_some()
+        || me.output.output_mode.pipe
+        || me.output.output_mode.pipe_mux
+        || me.output.output_mode.no_merge
+        || me.output.output_mode.proxy_mode;
+    let inspector_arguments = DownloadInspectorArguments {
+        inner: &me.inspector_options,
+        wait: me.wait,
+        skip_title,
+    };
+    let (_, data) = inspector
+        .inspect(&shiori_context, &me.url, &inspector_arguments, |c| {
             tracing::warn!("Selecting inspector candidates is not implemented yet. Falling back to the first candidate.");
             c.into_iter().next().unwrap()
         })
@@ -631,5 +690,27 @@ where
 
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inspect_title_becomes_a_sanitized_default_output_name() {
+        let title = "【ゲスト/A:B】 #11";
+        let command = DownloadCommand::<InspectorOptions>::from(InspectPlaylist {
+            title: Some(title.to_string()),
+            playlist_url: "https://example.test/live.m3u8".to_string(),
+            playlist_type: PlaylistType::HLS,
+            ..Default::default()
+        });
+
+        let output = command.output.output.unwrap();
+        let output_name = output.to_string_lossy();
+        assert!(output_name.contains("ゲスト"));
+        assert!(!output_name.contains('/'));
+        assert!(!output_name.contains(':'));
     }
 }

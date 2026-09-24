@@ -41,8 +41,8 @@ pub async fn load_playlist_with_retry(
                     }
                     Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
                         Ok(parsed) => break parsed,
-                        Err(error) => {
-                            tracing::warn!("Failed to parse M3U8 file: {error}");
+                        Err(_) => {
+                            tracing::warn!("Failed to parse HLS manifest response.");
                             if is_access_denied_playlist_response(status, &m3u8_bytes) {
                                 tracing::warn!(
                                     "Playlist returned AccessDenied; waiting {} ms before retrying.",
@@ -54,13 +54,13 @@ pub async fn load_playlist_with_retry(
                         }
                     },
                     Err(error) => {
-                        tracing::warn!("Failed to fetch M3U8 file: {error}");
+                        tracing::warn!("Failed to fetch HLS manifest: {}", error.without_url());
                         retry -= 1;
                     }
                 }
             }
             Err(error) => {
-                tracing::warn!("Failed to fetch M3U8 file: {error}");
+                tracing::warn!("Failed to fetch HLS manifest: {}", error.without_url());
                 retry -= 1;
             }
         }
@@ -100,8 +100,8 @@ pub async fn load_m3u8(
                     }
                     Ok(m3u8_bytes) => match iori_hls::parse_playlist_res(&m3u8_bytes) {
                         Ok(parsed) => break parsed,
-                        Err(error) => {
-                            tracing::warn!("Failed to parse M3U8 file: {error}");
+                        Err(_) => {
+                            tracing::warn!("Failed to parse HLS manifest response.");
                             if is_access_denied_playlist_response(status, &m3u8_bytes) {
                                 tracing::warn!(
                                     "Playlist returned AccessDenied; waiting {} ms before retrying.",
@@ -113,13 +113,13 @@ pub async fn load_m3u8(
                         }
                     },
                     Err(error) => {
-                        tracing::warn!("Failed to fetch M3U8 file: {error}");
+                        tracing::warn!("Failed to fetch HLS manifest: {}", error.without_url());
                         retry -= 1;
                     }
                 }
             }
             Err(error) => {
-                tracing::warn!("Failed to fetch M3U8 file: {error}");
+                tracing::warn!("Failed to fetch HLS manifest: {}", error.without_url());
                 retry -= 1;
             }
         }

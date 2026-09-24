@@ -27,6 +27,9 @@ pub struct HlsLiveSource {
     /// Optional callback used to obtain a replacement playlist URL after a
     /// manifest becomes unavailable.
     manifest_recovery: Option<ManifestRecovery>,
+    /// Delay between retries of an unavailable live manifest. When configured,
+    /// initial startup polls the current URL before requesting a replacement.
+    manifest_retry_interval: Option<Duration>,
 }
 
 impl HlsLiveSource {
@@ -39,6 +42,7 @@ impl HlsLiveSource {
             initial_segment_limit: None,
             idle_timeout: None,
             manifest_recovery: None,
+            manifest_retry_interval: None,
         })
     }
 
@@ -65,6 +69,13 @@ impl HlsLiveSource {
         Fut: Future<Output = Option<Url>> + Send + 'static,
     {
         self.manifest_recovery = Some(Arc::new(move || Box::pin(recovery())));
+        self
+    }
+
+    /// Set the delay between retries while waiting for a live manifest.
+    /// During initial startup, retry the current URL before requesting a new one.
+    pub fn with_manifest_retry_interval(mut self, interval: Option<Duration>) -> Self {
+        self.manifest_retry_interval = interval.filter(|duration| !duration.is_zero());
         self
     }
 
@@ -100,8 +111,8 @@ async fn recover_manifest_url(
             tracing::warn!("HLS playlist URL recovery returned an unusable replacement URL.");
             false
         }
-        Err(error) => {
-            tracing::warn!("Failed to activate the recovered HLS playlist URL: {error}");
+        Err(_) => {
+            tracing::warn!("Failed to activate the recovered HLS playlist URL.");
             false
         }
     }
@@ -116,6 +127,8 @@ impl StreamingSource for HlsLiveSource {
     ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
         let playlist = self.playlist.clone();
         let initial_recovery = self.manifest_recovery.clone();
+        let manifest_retry_interval = self.manifest_retry_interval;
+        let initial_wait_started = tokio::time::Instant::now();
         let mut latest_media_sequences = loop {
             let load_result = {
                 let mut playlist = playlist.lock().await;
@@ -124,6 +137,25 @@ impl StreamingSource for HlsLiveSource {
             match load_result {
                 Ok(media_sequences) => break media_sequences,
                 Err(error @ IoriError::ManifestFetchError) => {
+                    if let Some(interval) = manifest_retry_interval {
+                        if let Some(timeout) = self.idle_timeout {
+                            let elapsed = initial_wait_started.elapsed();
+                            if elapsed >= timeout {
+                                return Err(error);
+                            }
+                            let remaining = timeout - elapsed;
+                            if interval >= remaining {
+                                tokio::time::sleep(remaining).await;
+                                return Err(error);
+                            }
+                        }
+                        tracing::info!(
+                            "Live HLS playlist is not available yet; retrying the current URL in {} seconds.",
+                            interval.as_secs_f64()
+                        );
+                        tokio::time::sleep(interval).await;
+                        continue;
+                    }
                     if let Some(recovery) = initial_recovery.as_ref() {
                         tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
                         if recover_manifest_url(&playlist, context, recovery).await {
@@ -141,6 +173,7 @@ impl StreamingSource for HlsLiveSource {
 
         let context = context.clone();
         let manifest_recovery = self.manifest_recovery.clone();
+        let manifest_retry_interval = self.manifest_retry_interval;
         let initial_segment_limit = self.initial_segment_limit;
         let idle_timeout = self.idle_timeout;
         tokio::spawn(async move {
@@ -162,8 +195,12 @@ impl StreamingSource for HlsLiveSource {
                 let (mut segments, is_end) = match load_result {
                     Ok(v) => v,
                     Err(IoriError::ManifestFetchError) => {
+                        let retry_delay =
+                            manifest_retry_interval.unwrap_or(MANIFEST_RECOVERY_DELAY);
+                        let mut waited_for_retry = false;
                         if let Some(recovery) = manifest_recovery.as_ref() {
-                            tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                            tokio::time::sleep(retry_delay).await;
+                            waited_for_retry = manifest_retry_interval.is_some();
                             if recover_manifest_url(&playlist, &context, recovery).await {
                                 consecutive_manifest_failures = 0;
                                 continue;
@@ -174,7 +211,7 @@ impl StreamingSource for HlsLiveSource {
                             consecutive_manifest_failures.saturating_add(1);
                         tracing::warn!(
                             "Exceeded retry limit for fetching segments; waiting {} seconds before retrying live playlist (consecutive failures: {}).",
-                            MANIFEST_RECOVERY_DELAY.as_secs(),
+                            retry_delay.as_secs(),
                             consecutive_manifest_failures
                         );
                         if let Some(timeout) = idle_timeout
@@ -186,15 +223,19 @@ impl StreamingSource for HlsLiveSource {
                             );
                             break;
                         }
-                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                        if !waited_for_retry {
+                            tokio::time::sleep(retry_delay).await;
+                        }
                         continue;
                     }
                     Err(e) if e.is_transient_network_error() => {
+                        let retry_delay =
+                            manifest_retry_interval.unwrap_or(MANIFEST_RECOVERY_DELAY);
                         consecutive_manifest_failures =
                             consecutive_manifest_failures.saturating_add(1);
                         tracing::warn!(
-                            "Failed to process live playlist segments due to a transient network error; waiting {} seconds before retrying (consecutive failures: {}). {e}",
-                            MANIFEST_RECOVERY_DELAY.as_secs(),
+                            "Failed to process live playlist segments due to a transient network error; waiting {} seconds before retrying (consecutive failures: {}).",
+                            retry_delay.as_secs(),
                             consecutive_manifest_failures
                         );
                         if let Some(timeout) = idle_timeout
@@ -206,11 +247,11 @@ impl StreamingSource for HlsLiveSource {
                             );
                             break;
                         }
-                        tokio::time::sleep(MANIFEST_RECOVERY_DELAY).await;
+                        tokio::time::sleep(retry_delay).await;
                         continue;
                     }
                     Err(e) => {
-                        tracing::error!("Failed to process live playlist segments: {e}");
+                        tracing::error!("Failed to process live playlist segments.");
                         if sender.send(Err(e)).is_err() {
                             tracing::debug!("Failed to report live playlist segment error");
                         }

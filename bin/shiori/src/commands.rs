@@ -8,6 +8,8 @@ pub mod inspect;
 pub mod merge;
 pub mod update;
 
+pub const DEFAULT_WAIT_INTERVAL_SECONDS: u64 = 30;
+
 pub const STYLES: styling::Styles = styling::Styles::styled()
     .header(styling::AnsiColor::Green.on_default().bold().underline())
     .usage(styling::AnsiColor::Green.on_default().bold())

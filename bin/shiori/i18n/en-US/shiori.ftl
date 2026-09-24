@@ -1,6 +1,7 @@
 shiori-about = Yet another m3u8 downloader
 
 download-wait = Wait for stream to start when no stream is detected
+download-wait-interval = Seconds between wait retries (default: 30); use a longer interval to reduce requests to the platform.
 download-no-tui = Disable TUI
 download-url = URL to download
 
@@ -27,8 +28,8 @@ download-initial-segments =
 download-live-idle-timeout =
     Stop a live HLS fetch after N seconds without new segments.
 
-    Defaults to 30 seconds. Use it for pseudo-live archives that never
-    publish EXT-X-ENDLIST, or override it for normal live streams if needed.
+    Defaults to 30 seconds for normal downloads. With --wait, the timeout is
+    disabled unless this option is explicitly set.
 
 download-no-live-idle-timeout = Disable live idle timeout auto-stop behavior.
 

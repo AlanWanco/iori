@@ -1,6 +1,10 @@
-use crate::inspect::{
-    PluginManager,
-    inspectors::{DashPlugin, HlsPlugin, ShortLinkPlugin},
+use crate::{
+    commands::DEFAULT_WAIT_INTERVAL_SECONDS,
+    i18n::ClapI18n,
+    inspect::{
+        PluginManager,
+        inspectors::{DashPlugin, HlsPlugin, ShortLinkPlugin},
+    },
 };
 use clap::Parser;
 use clap_handler::handler;
@@ -17,12 +21,17 @@ use shiori_plugin_niconico::NiconicoPlugin;
 use shiori_plugin_radiko::RadikoPlugin;
 use shiori_plugin_sheeta::SheetaPlugin;
 use shiori_plugin_showroom::ShowroomPlugin;
+use std::num::NonZeroU64;
 
 #[derive(Parser, Clone, Default)]
 #[clap(name = "inspect", short_flag = 'S')]
 pub struct InspectCommand {
     #[clap(short, long)]
     wait: bool,
+
+    #[clap(long, default_value = "30")]
+    #[clap(about_ll = "download-wait-interval")]
+    wait_interval: Option<NonZeroU64>,
 
     #[clap(flatten)]
     inspector_options: InspectorOptions,
@@ -51,8 +60,17 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
     let context = ShioriContext {
         http: IoriHttp::new(|| Client::builder().user_agent(get_chrome_rua())),
     };
-    let (matched_inspector, data) = get_default_external_inspector()
-        .wait(this.wait)
+    let inspector = get_default_external_inspector();
+    let inspector = if this.wait {
+        inspector.wait_for(
+            this.wait_interval
+                .map(NonZeroU64::get)
+                .unwrap_or(DEFAULT_WAIT_INTERVAL_SECONDS),
+        )
+    } else {
+        inspector
+    };
+    let (matched_inspector, data) = inspector
         .inspect(&context, &this.url, &this.inspector_options, |c| {
             c.into_iter().next().unwrap()
         })
@@ -71,8 +89,14 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
 
 fn print_playlist_summary(index: usize, playlist: &InspectPlaylist) {
     eprintln!("Playlist {}", index + 1);
-    eprintln!("Title: {}", playlist.title.as_deref().unwrap_or("<unknown>"));
-    eprintln!("Playlist Type: {}", format_playlist_type(&playlist.playlist_type));
+    eprintln!(
+        "Title: {}",
+        playlist.title.as_deref().unwrap_or("<unknown>")
+    );
+    eprintln!(
+        "Playlist Type: {}",
+        format_playlist_type(&playlist.playlist_type)
+    );
     eprintln!("Playlist URL: {}", playlist.playlist_url);
 
     if let Some(source) = &playlist.source {
@@ -102,7 +126,10 @@ fn print_playlist_summary(index: usize, playlist: &InspectPlaylist) {
 
 fn print_source_summary(source: &InspectSource) {
     eprintln!("Platform: {}", source.platform);
-    eprintln!("Content Type: {}", format_content_type(&source.content_type));
+    eprintln!(
+        "Content Type: {}",
+        format_content_type(&source.content_type)
+    );
 
     if let Some(content_id) = source.content_id.as_deref() {
         eprintln!("Content ID: {content_id}");

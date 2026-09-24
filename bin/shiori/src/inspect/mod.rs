@@ -4,7 +4,7 @@ pub use shiori_plugin::*;
 use std::{collections::HashMap, time::Duration};
 use tokio::time::sleep;
 
-use crate::commands::STYLES;
+use crate::commands::{DEFAULT_WAIT_INTERVAL_SECONDS, STYLES};
 
 #[derive(Default)]
 pub struct PluginManager {
@@ -36,7 +36,11 @@ impl PluginManager {
     }
 
     pub fn wait(mut self, value: bool) -> Self {
-        self.wait = if value { Some(10) } else { None };
+        self.wait = if value {
+            Some(DEFAULT_WAIT_INTERVAL_SECONDS)
+        } else {
+            None
+        };
         self
     }
 

@@ -11,7 +11,7 @@ use iori::{
     download::{ParallelDownloader, TracingApp},
     merge::{Merger, SkipMerger},
 };
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, Notify, oneshot};
 
 use crate::source::{TestSegment, TestSource};
 
@@ -19,6 +19,8 @@ struct DelayedBatchSource {
     batches: Vec<Vec<TestSegment>>,
     delay: Duration,
 }
+
+struct PendingStartupSource(Arc<Notify>);
 
 struct RecordingMerger(Arc<Mutex<Vec<(u64, bool)>>>);
 
@@ -47,6 +49,19 @@ impl DelayedBatchSource {
     }
 }
 
+impl StreamingSource for PendingStartupSource {
+    type Segment = TestSegment;
+
+    async fn segments_stream(
+        &self,
+        _: &IoriContext,
+    ) -> IoriResult<impl Stream<Item = IoriResult<Vec<Self::Segment>>>> {
+        self.0.notify_one();
+        std::future::pending::<()>().await;
+        Ok(stream::empty::<IoriResult<Vec<Self::Segment>>>())
+    }
+}
+
 impl StreamingSource for DelayedBatchSource {
     type Segment = TestSegment;
 
@@ -69,6 +84,27 @@ impl StreamingSource for DelayedBatchSource {
             },
         )))
     }
+}
+
+#[tokio::test]
+async fn test_parallel_downloader_stop_signal_during_source_startup() -> anyhow::Result<()> {
+    let started = Arc::new(Notify::new());
+    let source = PendingStartupSource(started.clone());
+    let (stop_sender, stop_receiver) = oneshot::channel();
+    let download = tokio::spawn(
+        ParallelDownloader::builder(IoriContext::default())
+            .app(TracingApp::default())
+            .merger(SkipMerger)
+            .cache(Arc::new(MemoryCacheSource::new()))
+            .stop_signal(stop_receiver)
+            .download(source),
+    );
+
+    started.notified().await;
+    stop_sender.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), download).await???;
+
+    Ok(())
 }
 
 #[tokio::test]

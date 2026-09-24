@@ -8,5 +8,6 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
 shiori-plugin.workspace = true
 iori-sheeta.workspace = true

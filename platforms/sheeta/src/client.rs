@@ -4,7 +4,7 @@ use crate::model::{
 use fake_user_agent::get_chrome_rua;
 use reqwest::{
     Client,
-    header::{HeaderValue, ORIGIN, REFERER, USER_AGENT},
+    header::{ACCEPT, HeaderValue, ORIGIN, REFERER, USER_AGENT},
 };
 use serde_json::json;
 
@@ -95,6 +95,7 @@ impl SheetaClient {
         let response: FcVideoPageResponse = self
             .client
             .get(url)
+            .header(ACCEPT, "application/json")
             .header(USER_AGENT, get_chrome_rua())
             .header(ORIGIN, HeaderValue::from_str(self.origin())?)
             .header("fc_site_id", fc_site_id)
@@ -144,9 +145,13 @@ impl SheetaClient {
             .header(ORIGIN, HeaderValue::from_str(self.origin())?)
             .header(REFERER, HeaderValue::from_str(self.origin())?)
             .send()
-            .await?;
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to request the Sheeta HLS playlist probe."))?;
         let status = response.status();
-        let body = response.bytes().await?;
+        let body = response
+            .bytes()
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to read the Sheeta HLS playlist probe."))?;
 
         Ok(status.is_success() && is_hls_playlist(&body))
     }

@@ -475,3 +475,51 @@ async fn live_source_reuses_an_unchanged_encryption_key() -> anyhow::Result<()> 
 
     Ok(())
 }
+
+struct WaitForPlaylistResponder {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Respond for WaitForPlaylistResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call < 3 {
+            ResponseTemplate::new(404)
+        } else {
+            ResponseTemplate::new(200).set_body_string(media_playlist(0, 1))
+        }
+    }
+}
+
+#[tokio::test]
+async fn configured_wait_interval_polls_same_url_before_session_recovery() -> anyhow::Result<()> {
+    let mock_server = MockServer::start().await;
+    let playlist_calls = Arc::new(AtomicUsize::new(0));
+    Mock::given(method("GET"))
+        .and(path("/playlist.m3u8"))
+        .respond_with(WaitForPlaylistResponder {
+            calls: playlist_calls.clone(),
+        })
+        .mount(&mock_server)
+        .await;
+
+    let recovery_calls = Arc::new(AtomicUsize::new(0));
+    let recovery_count = recovery_calls.clone();
+    let source = HlsLiveSource::new(format!("{}/playlist.m3u8", mock_server.uri()), None)?
+        .with_manifest_recovery(move || {
+            recovery_count.fetch_add(1, Ordering::SeqCst);
+            async { None }
+        })
+        .with_manifest_retry_interval(Some(Duration::from_millis(25)));
+    let context = IoriContext::default();
+    let mut stream = source.segments_stream(&context).await?;
+
+    let batch = timeout(Duration::from_secs(2), stream.next())
+        .await?
+        .expect("playlist should become available while polling the same URL")?;
+    assert_eq!(batch[0].media_sequence, 0);
+    assert!(playlist_calls.load(Ordering::SeqCst) >= 4);
+    assert_eq!(recovery_calls.load(Ordering::SeqCst), 0);
+
+    Ok(())
+}
