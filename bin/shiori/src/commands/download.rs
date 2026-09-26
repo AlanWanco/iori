@@ -26,7 +26,7 @@ use reqwest::{
     Client, IntoUrl,
     header::{HeaderMap, HeaderName, HeaderValue},
 };
-use shiori_plugin::{InspectorArguments, PlaylistType, ShioriContext};
+use shiori_plugin::{ContentType, InspectorArguments, PlaylistType, ShioriContext};
 use std::{
     num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
@@ -235,6 +235,7 @@ where
                         self.url.clone(),
                         original_url.to_string(),
                         self.decrypt.key.as_deref(),
+                        matches!(self.extra.content_type.as_ref(), Some(ContentType::Archive)),
                         true,
                     )
                     .await?
@@ -475,6 +476,8 @@ pub struct ExtraOptions {
     pub initial_playlist_data: Option<String>,
     /// Platform identifier from InspectSource (e.g., "eplus", "niconico")
     pub platform: Option<String>,
+    /// Content type from InspectSource, used for platform-specific archive handling.
+    pub content_type: Option<ContentType>,
     /// Original URL from InspectSource, used for cookie refresh etc.
     pub original_url: Option<String>,
     pub streams_hint: Option<u32>,
@@ -673,6 +676,7 @@ where
                 playlist_type: Some(data.playlist_type),
                 initial_playlist_data: data.initial_playlist_data,
                 platform: data.source.as_ref().map(|s| s.platform.clone()),
+                content_type: data.source.as_ref().map(|s| s.content_type.clone()),
                 original_url: data.source.as_ref().and_then(|s| s.original_url.clone()),
                 streams_hint: data.streams_hint,
             },

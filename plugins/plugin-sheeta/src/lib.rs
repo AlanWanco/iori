@@ -49,12 +49,18 @@ impl ShioriPlugin for SheetaPlugin {
     }
 }
 
+#[derive(Clone)]
+struct SheetaVideoMetadata {
+    title: String,
+    broadcast_type: Option<&'static str>,
+}
+
 struct SheetaInspector {
     name: &'static str,
     host: Option<String>,
     clients: Mutex<HashMap<String, SheetaClient>>,
     fc_site_ids: Mutex<HashMap<(String, String), i32>>,
-    video_titles: Mutex<HashMap<(String, String), String>>,
+    video_metadata: Mutex<HashMap<(String, String), SheetaVideoMetadata>>,
 }
 
 impl SheetaInspector {
@@ -64,7 +70,7 @@ impl SheetaInspector {
             host,
             clients: Mutex::new(HashMap::new()),
             fc_site_ids: Mutex::new(HashMap::new()),
-            video_titles: Mutex::new(HashMap::new()),
+            video_metadata: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -123,41 +129,56 @@ impl Inspect for SheetaInspector {
             0
         };
 
-        let session_id = client.get_session_id(fc_site_id, &video_id).await?;
+        let cache_key = (host.clone(), video_id.clone());
+        let cached_metadata = self.video_metadata.lock().unwrap().get(&cache_key).cloned();
+        let metadata = if let Some(metadata) = cached_metadata {
+            metadata
+        } else {
+            let metadata = match client.get_video_data(fc_site_id, &video_id).await {
+                Ok(video_page) => {
+                    let title = video_page.title();
+                    SheetaVideoMetadata {
+                        title: if title.trim().is_empty() {
+                            video_id.clone()
+                        } else {
+                            title
+                        },
+                        broadcast_type: video_page.session_broadcast_type(),
+                    }
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Failed to fetch Sheeta video metadata; using the default session mode."
+                    );
+                    SheetaVideoMetadata {
+                        title: video_id.clone(),
+                        broadcast_type: None,
+                    }
+                }
+            };
+            self.video_metadata
+                .lock()
+                .unwrap()
+                .insert(cache_key, metadata.clone());
+            metadata
+        };
+
+        if metadata.broadcast_type == Some("dvr") {
+            log::info!("Detected an archived Sheeta live event; requesting DVR playback.");
+        }
+        let session_id = client
+            .get_session_id(fc_site_id, &video_id, metadata.broadcast_type)
+            .await?;
         let video_url = client.get_video_url(&session_id).await;
         if !args.get_boolean("shiori-wait") && !client.probe_video_url(&video_url).await? {
             return Ok(InspectResult::None);
         }
 
-        let title = if args.get_boolean("shiori-skip-title") {
-            None
+        let title = (!args.get_boolean("shiori-skip-title")).then(|| metadata.title.clone());
+        let content_type = if metadata.broadcast_type == Some("dvr") {
+            ContentType::Archive
         } else {
-            let cache_key = (host.clone(), video_id.clone());
-            let cached_title = self.video_titles.lock().unwrap().get(&cache_key).cloned();
-            let title = if let Some(title) = cached_title {
-                title
-            } else {
-                let title = match client.get_video_data(fc_site_id, &video_id).await {
-                    Ok(video_page) => video_page.title(),
-                    Err(_) => {
-                        log::warn!(
-                            "Failed to fetch the Sheeta video title; falling back to the video ID."
-                        );
-                        video_id.clone()
-                    }
-                };
-                let title = if title.trim().is_empty() {
-                    video_id.clone()
-                } else {
-                    title
-                };
-                self.video_titles
-                    .lock()
-                    .unwrap()
-                    .insert(cache_key, title.clone());
-                title
-            };
-            Some(title)
+            ContentType::Video
         };
 
         Ok(InspectResult::Playlist(InspectPlaylist {
@@ -169,7 +190,7 @@ impl Inspect for SheetaInspector {
                 format!("Origin: {}", client.origin()),
             ],
             source: Some(
-                InspectSource::new(host, ContentType::Video)
+                InspectSource::new(host, content_type)
                     .with_content_id(video_id)
                     .with_original_url(url),
             ),

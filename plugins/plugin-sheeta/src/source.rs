@@ -23,6 +23,7 @@ impl SheetaSource {
         playlist_url: String,
         original_url: String,
         key: Option<&str>,
+        use_dvr: bool,
         enable_recovery: bool,
     ) -> anyhow::Result<Self> {
         let captures = SheetaClient::wild_regex()
@@ -52,11 +53,15 @@ impl SheetaSource {
         let mut inner = HlsLiveSource::new(playlist_url, key)?;
         if enable_recovery {
             let recovery_client = client.clone();
+            let broadcast_type = use_dvr.then_some("dvr");
             inner = inner.with_manifest_recovery(move || {
                 let client = recovery_client.clone();
                 let video_id = video_id.clone();
                 async move {
-                    let session_id = client.get_session_id(fc_site_id, &video_id).await.ok()?;
+                    let session_id = client
+                        .get_session_id(fc_site_id, &video_id, broadcast_type)
+                        .await
+                        .ok()?;
                     let video_url = client.get_video_url(&session_id).await;
                     Url::parse(&video_url).ok()
                 }

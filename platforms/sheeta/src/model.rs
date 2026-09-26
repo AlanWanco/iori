@@ -22,8 +22,25 @@ impl FcVideoPageResponse {
         self.data.video_page.fanclub_site.id
     }
 
-    pub fn title(self) -> String {
-        self.data.video_page.title
+    pub fn title(&self) -> String {
+        self.data.video_page.title.clone()
+    }
+
+    /// Request the DVR session when this is a finished live event with VOD
+    /// conversion enabled. Ordinary videos and ongoing/upcoming lives use the
+    /// default session type.
+    pub fn session_broadcast_type(&self) -> Option<&'static str> {
+        let video_page = &self.data.video_page;
+        let finished_live = video_page.video_type.as_deref() == Some("live")
+            && video_page
+                .live_finished_at
+                .as_deref()
+                .is_some_and(|finished_at| !finished_at.trim().is_empty());
+        let can_convert_to_vod = video_page.video.as_ref().is_some_and(|video| {
+            video.allow_dvr_flg == Some(true) && video.convert_to_vod_flg == Some(true)
+        });
+
+        (finished_live && can_convert_to_vod).then_some("dvr")
     }
 }
 
@@ -38,6 +55,20 @@ pub struct VideoPage {
     description: String,
     fanclub_site: FanclubSite,
     video_tags: Vec<VideoTag>,
+    #[serde(rename = "type", default)]
+    video_type: Option<String>,
+    #[serde(default)]
+    live_finished_at: Option<String>,
+    #[serde(default)]
+    video: Option<VideoSettings>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VideoSettings {
+    #[serde(default)]
+    allow_dvr_flg: Option<bool>,
+    #[serde(default)]
+    convert_to_vod_flg: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,5 +146,42 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.title(), title);
+    }
+
+    #[test]
+    fn finished_live_with_vod_conversion_uses_dvr_session() {
+        let mut body = serde_json::json!({
+            "data": {
+                "video_page": {
+                    "title": "Archived live",
+                    "description": "",
+                    "fanclub_site": { "id": 956 },
+                    "video_tags": [],
+                    "type": "live",
+                    "live_finished_at": "2026-09-24 12:30:00",
+                    "video": {
+                        "allow_dvr_flg": true,
+                        "convert_to_vod_flg": true
+                    }
+                }
+            }
+        });
+
+        let response: FcVideoPageResponse = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(response.session_broadcast_type(), Some("dvr"));
+
+        body["data"]["video_page"]["live_finished_at"] = serde_json::Value::Null;
+        let response: FcVideoPageResponse = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(response.session_broadcast_type(), None);
+
+        body["data"]["video_page"]["live_finished_at"] = serde_json::json!("2026-09-24 12:30:00");
+        body["data"]["video_page"]["video"]["allow_dvr_flg"] = serde_json::json!(false);
+        let response: FcVideoPageResponse = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(response.session_broadcast_type(), None);
+
+        body["data"]["video_page"]["video"]["allow_dvr_flg"] = serde_json::json!(true);
+        body["data"]["video_page"]["type"] = serde_json::json!("vod");
+        let response: FcVideoPageResponse = serde_json::from_value(body).unwrap();
+        assert_eq!(response.session_broadcast_type(), None);
     }
 }

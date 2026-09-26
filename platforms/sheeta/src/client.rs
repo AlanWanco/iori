@@ -108,7 +108,12 @@ impl SheetaClient {
         Ok(response)
     }
 
-    pub async fn get_session_id(&self, fc_site_id: i32, video_id: &str) -> anyhow::Result<String> {
+    pub async fn get_session_id(
+        &self,
+        fc_site_id: i32,
+        video_id: &str,
+        broadcast_type: Option<&str>,
+    ) -> anyhow::Result<String> {
         let url = format!("{}/video_pages/{}/session_ids", self.api_base_url, video_id);
         let response: SessionIdResponse = self
             .client
@@ -118,7 +123,7 @@ impl SheetaClient {
             // .bearer_auth("")
             .header("fc_site_id", fc_site_id)
             .header("fc_use_device", HeaderValue::from_static("null"))
-            .json(&json!({}))
+            .json(&session_request_body(broadcast_type))
             .send()
             .await?
             .error_for_status()?
@@ -158,6 +163,13 @@ impl SheetaClient {
 
     pub fn origin(&self) -> &str {
         &self.origin
+    }
+}
+
+fn session_request_body(broadcast_type: Option<&str>) -> serde_json::Value {
+    match broadcast_type {
+        Some("dvr") => json!({ "broadcast_type": "dvr" }),
+        _ => json!({}),
     }
 }
 
@@ -211,7 +223,7 @@ mod tests {
     async fn test_get_session_id() {
         let client = SheetaClient::nico_channel_plus(Default::default());
         let session_id = client
-            .get_session_id(0, "smHLeLu9aQtR3taSjgCdEqvC")
+            .get_session_id(0, "smHLeLu9aQtR3taSjgCdEqvC", None)
             .await
             .unwrap();
         println!("session_id: {}", session_id);
@@ -232,6 +244,17 @@ mod tests {
             video_url,
             "https://hls-auth.cloud.stream.co.jp/auth/index.m3u8?session_id=39447efb-e081-4b16-8984-7ee8da96bfe0"
         );
+    }
+
+    #[test]
+    fn session_request_body_selects_dvr_only_when_requested() {
+        assert_eq!(
+            session_request_body(Some("dvr")),
+            serde_json::json!({
+                "broadcast_type": "dvr"
+            })
+        );
+        assert_eq!(session_request_body(None), serde_json::json!({}));
     }
 
     #[test]
