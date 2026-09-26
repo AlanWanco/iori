@@ -174,6 +174,20 @@ impl Inspect for SheetaInspector {
             return Ok(InspectResult::None);
         }
 
+        let key = if args.get_boolean("shiori-inspect-mode") {
+            match client.get_hls_encryption_key(&video_url).await {
+                Ok(key) => key,
+                Err(_) => {
+                    log::warn!(
+                        "Could not retrieve the Sheeta HLS encryption key during inspection."
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let title = (!args.get_boolean("shiori-skip-title")).then(|| metadata.title.clone());
         let content_type = if metadata.broadcast_type == Some("dvr") {
             ContentType::Archive
@@ -183,6 +197,7 @@ impl Inspect for SheetaInspector {
 
         Ok(InspectResult::Playlist(InspectPlaylist {
             title,
+            key,
             playlist_url: video_url,
             playlist_type: PlaylistType::HLS,
             headers: vec![

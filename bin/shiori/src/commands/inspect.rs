@@ -70,8 +70,11 @@ async fn handle_inspect(this: InspectCommand) -> anyhow::Result<()> {
     } else {
         inspector
     };
+    let inspector_arguments = InspectModeArguments {
+        inner: &this.inspector_options,
+    };
     let (matched_inspector, data) = inspector
-        .inspect(&context, &this.url, &this.inspector_options, |c| {
+        .inspect(&context, &this.url, &inspector_arguments, |c| {
             c.into_iter().next().unwrap()
         })
         .await?;
@@ -115,8 +118,8 @@ fn print_playlist_summary(index: usize, playlist: &InspectPlaylist) {
         eprintln!("Cookies: {} entries", playlist.cookies.len());
     }
 
-    if playlist.key.is_some() {
-        eprintln!("Key: present");
+    if let Some(key) = playlist.key.as_deref() {
+        eprintln!("Key: {key}");
     }
 
     if playlist.initial_playlist_data.is_some() {
@@ -161,6 +164,24 @@ fn format_content_type(content_type: &ContentType) -> &'static str {
         ContentType::Archive => "Archive",
         ContentType::Video => "Video",
         ContentType::File => "File",
+    }
+}
+
+struct InspectModeArguments<'a> {
+    inner: &'a InspectorOptions,
+}
+
+impl InspectorArguments for InspectModeArguments<'_> {
+    fn get_string(&self, argument: &'static str) -> Option<String> {
+        self.inner.get_string(argument)
+    }
+
+    fn get_boolean(&self, argument: &'static str) -> bool {
+        if argument == "shiori-inspect-mode" {
+            true
+        } else {
+            self.inner.get_boolean(argument)
+        }
     }
 }
 
@@ -210,6 +231,19 @@ impl clap::FromArgMatches for InspectorOptions {
     ) -> Result<(), clap::Error> {
         self.arg_matches = arg_matches.clone();
         Result::Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inspect_mode_argument_is_enabled() {
+        let inner = InspectorOptions::default();
+        let arguments = InspectModeArguments { inner: &inner };
+
+        assert!(arguments.get_boolean("shiori-inspect-mode"));
     }
 }
 
