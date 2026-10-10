@@ -368,3 +368,78 @@ async fn test_parallel_downloader_stop_signal_during_live_wait() -> anyhow::Resu
 
     Ok(())
 }
+
+// The signal forwarder must not take the merger mutex: finish holds it while
+// waiting for FFmpeg, and in-flight segment downloads may still be completing.
+struct CancellableMerger {
+    stop: tokio_util::sync::CancellationToken,
+    finishing: Arc<Notify>,
+}
+
+impl Merger for CancellableMerger {
+    type Result = ();
+    fn cancellation_token(&self) -> Option<tokio_util::sync::CancellationToken> {
+        Some(self.stop.clone())
+    }
+    async fn update(&mut self, _: SegmentInfo, _: impl CacheSource) -> IoriResult<()> {
+        Ok(())
+    }
+    async fn fail(&mut self, _: SegmentInfo, _: impl CacheSource) -> IoriResult<()> {
+        Ok(())
+    }
+    async fn finish(&mut self, _: impl CacheSource) -> IoriResult<()> {
+        self.finishing.notify_one();
+        self.stop.cancelled().await;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn stop_cancels_output_even_while_merger_finish_holds_lock() {
+    let stop = tokio_util::sync::CancellationToken::new();
+    let finishing = Arc::new(Notify::new());
+    let (sender, receiver) = oneshot::channel();
+    let task = tokio::spawn(
+        ParallelDownloader::builder(Default::default())
+            .app(TracingApp::default())
+            .merger(CancellableMerger {
+                stop,
+                finishing: finishing.clone(),
+            })
+            .cache(MemoryCacheSource::new())
+            .stop_signal(receiver)
+            .download(TestSource::new(vec![])),
+    );
+    finishing.notified().await;
+    sender.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn failed_output_cancellation_stops_pending_source_without_ctrlc() {
+    let started = Arc::new(Notify::new());
+    let stop = tokio_util::sync::CancellationToken::new();
+    let (_sender, receiver) = oneshot::channel();
+    let task = tokio::spawn(
+        ParallelDownloader::builder(Default::default())
+            .app(TracingApp::default())
+            .merger(CancellableMerger {
+                stop: stop.clone(),
+                finishing: Arc::new(Notify::new()),
+            })
+            .cache(MemoryCacheSource::new())
+            .stop_signal(receiver)
+            .download(PendingStartupSource(started.clone())),
+    );
+    started.notified().await;
+    stop.cancel();
+    tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

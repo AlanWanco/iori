@@ -30,6 +30,22 @@ async fn wait_for_stop_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+// Forward Ctrl-C immediately to external output workers, including while the
+// downloader waits for in-flight downloads or holds the merger lock in finish.
+struct OutputStopGuard {
+    task: tokio::task::JoinHandle<()>,
+    token: Option<tokio_util::sync::CancellationToken>,
+}
+
+impl Drop for OutputStopGuard {
+    fn drop(&mut self) {
+        self.task.abort();
+        if let Some(token) = &self.token {
+            token.cancel();
+        }
+    }
+}
+
 struct SegmentDownloadOutcome {
     segment: SegmentInfo,
     succeeded: bool,
@@ -153,6 +169,24 @@ where
     A: DownloaderApp + Send + Sync + 'static,
 {
     pub async fn download(mut self) -> IoriResult<M::Result> {
+        let token = self.merger.lock().await.cancellation_token();
+        let task_token = token.clone();
+        let (sender, receiver) = oneshot::channel();
+        let stop_signal = std::mem::replace(&mut self.stop_signal, receiver);
+        let _stop_guard = OutputStopGuard {
+            token,
+            task: tokio::spawn(async move {
+                if let Some(token) = task_token {
+                    tokio::select! {
+                        _ = stop_signal => token.cancel(),
+                        _ = token.cancelled() => (),
+                    }
+                } else {
+                    let _ = stop_signal.await;
+                }
+                let _ = sender.send(());
+            }),
+        };
         self.app.on_start().await?;
 
         {
@@ -170,13 +204,14 @@ where
             let stream = stream.expect("stream was checked above");
             tokio::pin!(stream);
 
-            loop {
+            'download: loop {
                 let segments = tokio::select! {
-                    segments = stream.next() => segments,
+                    biased;
                     _ = &mut self.stop_signal => {
                         tracing::info!("Stop signal received, finishing downloaded segments.");
                         break;
                     }
+                    segments = stream.next() => segments,
                 };
 
                 let Some(segments) = segments else {
@@ -226,7 +261,13 @@ where
                     let merger = self.merger.clone();
                     let cache = self.cache.clone();
                     let retries = self.retries;
-                    let permit = self.permits.clone().acquire_owned().await.unwrap();
+                    let permit = tokio::select! {
+                        biased;
+                        _ = &mut self.stop_signal => {
+                            break 'download;
+                        }
+                        permit = self.permits.clone().acquire_owned() => permit.unwrap(),
+                    };
                     tokio::spawn(async move {
                         let mut outcomes = Vec::with_capacity(group.len());
                         for segment in group {

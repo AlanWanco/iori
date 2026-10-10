@@ -20,6 +20,12 @@ pub trait Merger {
     /// Result of the merge.
     type Result: Send + Sync + 'static;
 
+    /// Optional cancellation handle for external output workers. This must be
+    /// usable without locking the merger (finish may be waiting for a child).
+    fn cancellation_token(&self) -> Option<tokio_util::sync::CancellationToken> {
+        None
+    }
+
     /// Add a segment to the merger.
     ///
     /// This method might not be called in order of segment sequence.
@@ -144,6 +150,13 @@ where
     M: AutoMergerMerge + Send,
 {
     type Result = (); // TODO: merger might have different result types
+
+    fn cancellation_token(&self) -> Option<tokio_util::sync::CancellationToken> {
+        match self {
+            Self::Pipe(merger) => merger.cancellation_token(),
+            _ => None,
+        }
+    }
 
     async fn update(&mut self, segment: SegmentInfo, cache: impl CacheSource) -> IoriResult<()> {
         match self {

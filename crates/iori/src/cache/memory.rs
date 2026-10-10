@@ -51,7 +51,10 @@ impl CacheSource for MemoryCacheSource {
             .cache
             .lock()
             .unwrap()
-            .remove(&(segment.sequence, segment.stream_id))
+            // Readers must be replayable after a mux restart. Only invalidate
+            // or clear removes the cached segment, matching the file backends.
+            .get(&(segment.sequence, segment.stream_id))
+            .cloned()
             .unwrap_or_default();
         match data {
             MemoryEntry::Pending => Err(IoriError::IOError(std::io::Error::new(
@@ -83,7 +86,7 @@ impl CacheSource for MemoryCacheSource {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum MemoryEntry {
     #[default]
     Pending,
@@ -152,6 +155,11 @@ mod tests {
         let mut data = Vec::new();
         reader.read_to_end(&mut data).await?;
         assert_eq!(data, b"hello");
+
+        let mut replay = cache.open_reader(&segment_info).await?;
+        let mut replay_data = Vec::new();
+        replay.read_to_end(&mut replay_data).await?;
+        assert_eq!(replay_data, b"hello");
 
         cache.invalidate(&segment_info).await?;
         let result = cache.open_reader(&segment_info).await;

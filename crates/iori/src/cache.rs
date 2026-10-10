@@ -19,7 +19,9 @@ pub trait CacheSource: Send + Sync + 'static {
         segment: &SegmentInfo,
     ) -> impl Future<Output = IoriResult<Option<CacheSourceWriter>>> + Send;
 
-    /// Open a reader for reading data of the segment.
+    /// Open a reader for reading data of the segment from byte zero.
+    /// Reopening a completed segment must be supported until invalidate/clear;
+    /// the pipe muxer uses this to replay initialization data after reconnecting.
     fn open_reader(
         &self,
         segment: &SegmentInfo,
