@@ -1,6 +1,6 @@
 #!/bin/sh
 #![allow(unused_attributes)] /*
-OUT=/tmp/tmp && rustc "$0" -o ${OUT} && exec ${OUT} $@ || exit $? #*/
+                             OUT=/tmp/tmp && rustc "$0" -o ${OUT} && exec ${OUT} $@ || exit $? #*/
 
 use std::fs;
 use std::io::Result;
@@ -19,6 +19,17 @@ fn cd(dir_name: &str) -> Result<()> {
     std::env::set_current_dir(dir_name)
 }
 
+fn run(command: &mut Command) -> Result<()> {
+    let status = command.status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "{command:?} failed with {status}"
+        )))
+    }
+}
+
 fn main() -> Result<()> {
     let _ = mkdir("tmp");
 
@@ -32,33 +43,28 @@ fn main() -> Result<()> {
     let num_job = std::thread::available_parallelism().unwrap().get();
 
     if fs::metadata("ffmpeg").is_err() {
-        Command::new("git")
+        run(Command::new("git")
             .arg("clone")
             .arg("--single-branch")
             .arg("--branch")
             .arg(&branch)
             .arg("--depth")
             .arg("1")
-            .arg("https://github.com/ffmpeg/ffmpeg")
-            .status()?;
+            .arg("https://github.com/ffmpeg/ffmpeg"))?;
     }
 
     cd("ffmpeg")?;
 
-    Command::new("git")
+    run(Command::new("git")
         .arg("fetch")
         .arg("origin")
         .arg(&branch)
         .arg("--depth")
-        .arg("1")
-        .status()?;
+        .arg("1"))?;
 
-    Command::new("git")
-        .arg("checkout")
-        .arg("FETCH_HEAD")
-        .status()?;
+    run(Command::new("git").arg("checkout").arg("FETCH_HEAD"))?;
 
-    Command::new("./configure")
+    run(Command::new("./configure")
         .arg(format!("--prefix={}", build_path))
         // To workaround `https://github.com/larksuite/rsmpeg/pull/98#issuecomment-1467511193`
         .arg("--disable-decoder=exr,phm")
@@ -75,15 +81,11 @@ fn main() -> Result<()> {
         .arg("--extra-libs=-lstdc++")
         .arg("--extra-cflags=-static -static-libgcc")
         .arg("--extra-cxxflags=-static -static-libgcc -static-libstdc++")
-        .arg("--extra-ldflags=-static -static-libgcc -static-libstdc++")
-        .status()?;
+        .arg("--extra-ldflags=-static -static-libgcc -static-libstdc++"))?;
 
-    Command::new("make")
-        .arg("-j")
-        .arg(num_job.to_string())
-        .status()?;
+    run(Command::new("make").arg("-j").arg(num_job.to_string()))?;
 
-    Command::new("make").arg("install").status()?;
+    run(Command::new("make").arg("install"))?;
 
     cd("..")?;
 

@@ -103,7 +103,7 @@ jobs:
       - name: Build | FFmpeg
         run: |
           pushd crates/iori-ffmpeg
-          ./build/build.rs "$FFMPEG_BRANCH"
+          ./build/build.rs "${{ matrix.target }}" "$FFMPEG_BRANCH"
           popd
 
       - name: Deploy | Upload artifacts
@@ -208,7 +208,7 @@ jobs:
           echo PKG_CONFIG_ALLOW_CROSS=1 >> $GITHUB_ENV
 
       - name: Setup | Environment [Windows]
-        if: matrix.target == 'x86_64-pc-windows-gnu'
+        if: inputs.build_ffmpeg == true && matrix.target == 'x86_64-pc-windows-gnu'
         run: |
           sudo apt-get update -qq && sudo apt-get -y install \
             mingw-w64
