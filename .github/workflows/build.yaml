@@ -16,8 +16,6 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macOS-latest
           - target: aarch64-apple-darwin
@@ -82,6 +80,37 @@ jobs:
           name: ffmpeg-${{ matrix.target }}
           path: crates/iori-ffmpeg/tmp/ffmpeg_build
 
+  windows-ffmpeg-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2.4.0
+
+      - name: Setup | FFmpeg Build Tools [Windows]
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get -y install build-essential git-core mingw-w64 nasm pkg-config
+
+      - name: Build | Windows FFmpeg
+        run: |
+          pushd crates/iori-ffmpeg
+          ./build/build.rs x86_64-pc-windows-gnu "$FFMPEG_BRANCH"
+          popd
+
+      - name: Validate | Windows FFmpeg libraries
+        run: |
+          for library in avcodec avdevice avfilter avformat avutil swresample swscale; do
+            archive="crates/iori-ffmpeg/tmp/ffmpeg_build/lib/lib${library}.a"
+            test -s "$archive"
+            x86_64-w64-mingw32-objdump -f "$archive" | grep 'file format pe-x86-64' >/dev/null
+          done
+
+      - name: Deploy | Upload Windows FFmpeg
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-x86_64-pc-windows-gnu
+          path: crates/iori-ffmpeg/tmp/ffmpeg_build
+
   build:
     strategy:
       fail-fast: false
@@ -96,9 +125,6 @@ jobs:
           # - target: x86_64-unknown-linux-musl
           #   os: ubuntu-latest
           #   name: iori-x86_64-unknown-linux-musl
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
-            name: iori-x86_64-pc-windows-gnu
           - target: x86_64-apple-darwin
             os: macOS-latest
             name: iori-x86_64-apple-darwin
@@ -154,16 +180,6 @@ jobs:
           echo PKG_CONFIG_PATH_FOR_TARGET="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/lib/pkgconfig" >> $GITHUB_ENV
           echo PKG_CONFIG_ALLOW_CROSS=1 >> $GITHUB_ENV
 
-      - name: Setup | Environment [Windows]
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        run: |
-          sudo apt-get update -qq && sudo apt-get -y install \
-            mingw-w64
-          echo FFMPEG_INCLUDE_DIR="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/include" >> $GITHUB_ENV
-          echo FFMPEG_LIBS_DIR="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/lib" >> $GITHUB_ENV
-          echo PKG_CONFIG_PATH_FOR_TARGET="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/lib/pkgconfig" >> $GITHUB_ENV
-          echo PKG_CONFIG_ALLOW_CROSS=1 >> $GITHUB_ENV
-
       # - name: Setup tmate session
       #   if: matrix.target == 'x86_64-pc-windows-gnu'
       #   uses: mxschmitt/action-tmate@v3
@@ -175,19 +191,7 @@ jobs:
         run: |
           cargo build --release --locked --features shiori/ffmpeg --target ${{ matrix.target }} --workspace --exclude srr
 
-      - name: PostBuild | Prepare artifacts [Windows]
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        shell: bash
-        run: |
-          cd target/${{ matrix.target }}/release
-          strip minyami.exe
-          strip ssadecrypt.exe
-          strip shiori.exe
-          mkdir ../../../${{ matrix.name }}
-          mv minyami.exe ssadecrypt.exe shiori.exe ../../../${{ matrix.name }}
-          cd -
-      - name: PostBuild | Prepare artifacts [-nix]
-        if: matrix.target != 'x86_64-pc-windows-gnu'
+      - name: PostBuild | Prepare artifacts
         run: |
           cd target/${{ matrix.target }}/release
           strip minyami || true
@@ -202,3 +206,70 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}/
+
+  windows-build:
+  windows-build:
+    needs: [windows-ffmpeg-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v2.4.0
+
+      - name: Setup | Cache Cargo
+        uses: actions/cache@v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup | Cache Cargo Target
+        uses: actions/cache@v4.2.0
+        with:
+          path: target
+          key: ${{ matrix.target }}-cargo-target
+
+      - name: Setup | Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          target: x86_64-pc-windows-gnu
+
+      - name: Setup | Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup | Compiled FFmpeg
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-x86_64-pc-windows-gnu
+          path: ${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build
+
+      - name: Setup | Environment [Windows]
+        run: |
+          sudo apt-get update -qq && sudo apt-get -y install mingw-w64
+          echo FFMPEG_INCLUDE_DIR="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/include" >> $GITHUB_ENV
+          echo FFMPEG_LIBS_DIR="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/lib" >> $GITHUB_ENV
+          echo PKG_CONFIG_PATH_FOR_TARGET="${{ github.workspace }}/crates/iori-ffmpeg/tmp/ffmpeg_build/lib/pkgconfig" >> $GITHUB_ENV
+          echo PKG_CONFIG_ALLOW_CROSS=1 >> $GITHUB_ENV
+
+      - name: Build | Windows Shiori
+        shell: bash
+        run: cargo build --release --locked --features shiori/ffmpeg --target x86_64-pc-windows-gnu --workspace --exclude srr
+
+      - name: PostBuild | Prepare Windows artifacts
+        shell: bash
+        run: |
+          cd target/x86_64-pc-windows-gnu/release
+          strip minyami.exe ssadecrypt.exe shiori.exe
+          mkdir ../../../iori-x86_64-pc-windows-gnu
+          mv minyami.exe ssadecrypt.exe shiori.exe ../../../iori-x86_64-pc-windows-gnu/
+
+      - name: Deploy | Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iori-x86_64-pc-windows-gnu
+          path: iori-x86_64-pc-windows-gnu/
