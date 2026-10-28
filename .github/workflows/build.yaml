@@ -154,12 +154,9 @@ jobs:
           key: ${{ matrix.target }}-cargo-target
 
       - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          profile: minimal
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
 
       - name: Setup | Protoc
         uses: arduino/setup-protoc@v3
@@ -208,7 +205,6 @@ jobs:
           path: ${{ matrix.name }}/
 
   windows-build:
-  windows-build:
     needs: [windows-ffmpeg-build]
     runs-on: ubuntu-latest
     steps:
@@ -227,15 +223,12 @@ jobs:
         uses: actions/cache@v4.2.0
         with:
           path: target
-          key: ${{ matrix.target }}-cargo-target
+          key: windows-cargo-build-v2
 
       - name: Setup | Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          profile: minimal
-          target: x86_64-pc-windows-gnu
+          targets: x86_64-pc-windows-gnu
 
       - name: Setup | Protoc
         uses: arduino/setup-protoc@v3
@@ -264,7 +257,8 @@ jobs:
         shell: bash
         run: |
           cd target/x86_64-pc-windows-gnu/release
-          strip minyami.exe ssadecrypt.exe shiori.exe
+          x86_64-w64-mingw32-strip minyami.exe ssadecrypt.exe shiori.exe
+          x86_64-w64-mingw32-objdump -f shiori.exe | grep 'file format pei-x86-64' >/dev/null
           mkdir ../../../iori-x86_64-pc-windows-gnu
           mv minyami.exe ssadecrypt.exe shiori.exe ../../../iori-x86_64-pc-windows-gnu/
 
